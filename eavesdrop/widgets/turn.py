@@ -48,6 +48,16 @@ def _args_preview(arguments) -> str:
     return _truncate(str(arguments))
 
 
+def _is_final(text: str) -> bool:
+    t = text.strip()
+    return t.startswith("<final>") and t.endswith("</final>")
+
+
+def _unwrap_final(text: str) -> str:
+    t = text.strip()
+    return t[len("<final>"):-len("</final>")].strip()
+
+
 def _args_full(arguments) -> str:
     if arguments is None:
         return "(no arguments)"
@@ -248,6 +258,60 @@ class ThinkingBlock(Widget):
         self.display = value
 
 
+class FinalBlock(Widget):
+    """A collapsible assistant final-response block (text wrapped in <final> tags)."""
+
+    can_focus = True
+    expanded: reactive[bool] = reactive(False)
+
+    BINDINGS = [Binding("enter", "toggle", "Toggle", show=False)]
+
+    DEFAULT_CSS = """
+    FinalBlock {
+        height: auto;
+        padding: 0 0 0 2;
+    }
+    FinalBlock:focus {
+        background: $boost;
+    }
+    FinalBlock .final-label {
+        color: $text;
+        text-style: bold;
+    }
+    FinalBlock .final-preview {
+        color: $text-muted;
+    }
+    FinalBlock .final-body {
+        color: $text;
+        padding: 0 0 0 2;
+    }
+    """
+
+    def __init__(self, text: str, **kwargs):
+        super().__init__(**kwargs)
+        self._text = text
+
+    def compose(self) -> ComposeResult:
+        yield Label("[RESPONSE]", classes="final-label")
+        yield Static(_truncate(self._text), classes="final-preview", id="preview")
+        body = Static(self._text, classes="final-body", id="body")
+        body.display = False
+        yield body
+
+    def watch_expanded(self, value: bool) -> None:
+        try:
+            self.query_one("#preview").display = not value
+            self.query_one("#body").display = value
+        except Exception:
+            pass
+
+    def action_toggle(self) -> None:
+        self.expanded = not self.expanded
+
+    def toggle(self) -> None:
+        self.expanded = not self.expanded
+
+
 class UsageFooter(Widget):
     """Token/cost footer for assistant turns."""
 
@@ -323,6 +387,7 @@ class AssistantTurn(Widget):
         self._message = message
         self._tool_calls: list[ToolCallBlock] = []
         self._thinking_blocks: list[ThinkingBlock] = []
+        self._final_blocks: list[FinalBlock] = []
         self._usage_footer: UsageFooter | None = None
 
     def compose(self) -> ComposeResult:
@@ -338,7 +403,12 @@ class AssistantTurn(Widget):
                 self._tool_calls.append(tc)
                 yield tc
             elif block.type == "text" and block.text.strip():
-                yield Static(block.text, classes="assistant-body", markup=False)
+                if _is_final(block.text):
+                    fb = FinalBlock(_unwrap_final(block.text))
+                    self._final_blocks.append(fb)
+                    yield fb
+                else:
+                    yield Static(block.text, classes="assistant-body", markup=False)
 
         if self._message.usage:
             footer = UsageFooter(self._message.usage)

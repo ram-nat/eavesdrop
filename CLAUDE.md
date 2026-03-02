@@ -88,7 +88,8 @@ venv/bin/pytest tests/ -v
 
 ## Known Constraints / Future Work
 
-- Tool call expand/collapse: `e` toggles all globally; `Enter` on a focused `ToolCallBlock` or `ToolResultBlock` toggles that item individually. Both block types are focusable (`can_focus = True`) — tab to navigate between them.
+- Tool call expand/collapse: `e` toggles all globally; `Enter` on a focused `ToolCallBlock`, `ToolResultBlock`, or `FinalBlock` toggles that item individually. All three block types are focusable (`can_focus = True`) — tab to navigate between them.
+- Assistant text wrapped in `<final>...</final>` (openclaw's response tag) is detected by `_is_final()`, stripped by `_unwrap_final()`, and rendered as a collapsible `FinalBlock` (collapsed by default, label `[RESPONSE]`). Plain text blocks without the tag render as normal `Static` widgets.
 - Conversation does not render assistant text as markdown (uses plain `Static`); upgrading to `Markdown` widget is straightforward but adds render overhead for large sessions
 - `session_summary()` does a second full file scan separately from `parse_file()`; for very large session dirs this could be unified
 - Default sessions dir is hardcoded to `/home/openclaw/.openclaw/agents/main-cloud/sessions/`; override with `--dir`
