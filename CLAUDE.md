@@ -87,7 +87,7 @@ venv/bin/pytest tests/ -v
 
 ## Known Constraints / Future Work
 
-- Tool call expand/collapse is all-or-nothing (`e` key); per-item toggle via `Enter` is wired in the plan but not yet implemented in the widget
+- Tool call expand/collapse: `e` toggles all globally; `Enter` on a focused `ToolCallBlock` or `ToolResultBlock` toggles that item individually. Both block types are focusable (`can_focus = True`) — tab to navigate between them.
 - Conversation does not render assistant text as markdown (uses plain `Static`); upgrading to `Markdown` widget is straightforward but adds render overhead for large sessions
 - `session_summary()` does a second full file scan separately from `parse_file()`; for very large session dirs this could be unified
 - Default sessions dir is hardcoded to `/home/openclaw/.openclaw/agents/main-cloud/sessions/`; override with `--dir`
