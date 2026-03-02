@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from rich.syntax import Syntax
 from rich.text import Text
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.widget import Widget
 from textual.widgets import Static, Label
 from textual.reactive import reactive
@@ -82,12 +83,18 @@ class ModelChangeTurn(Widget):
 class ToolCallBlock(Widget):
     """A collapsible tool call block."""
 
+    can_focus = True
     expanded: reactive[bool] = reactive(False)
+
+    BINDINGS = [Binding("enter", "toggle", "Toggle", show=False)]
 
     DEFAULT_CSS = """
     ToolCallBlock {
         height: auto;
         padding: 0 0 0 2;
+    }
+    ToolCallBlock:focus {
+        background: $boost;
     }
     ToolCallBlock .tool-label {
         color: $warning;
@@ -127,6 +134,9 @@ class ToolCallBlock(Widget):
         except Exception:
             pass
 
+    def action_toggle(self) -> None:
+        self.expanded = not self.expanded
+
     def toggle(self) -> None:
         self.expanded = not self.expanded
 
@@ -134,12 +144,18 @@ class ToolCallBlock(Widget):
 class ToolResultBlock(Widget):
     """A collapsible tool result block."""
 
+    can_focus = True
     expanded: reactive[bool] = reactive(False)
+
+    BINDINGS = [Binding("enter", "toggle", "Toggle", show=False)]
 
     DEFAULT_CSS = """
     ToolResultBlock {
         height: auto;
         padding: 0 0 0 2;
+    }
+    ToolResultBlock:focus {
+        background: $boost;
     }
     ToolResultBlock .result-label {
         color: $success;
@@ -191,6 +207,9 @@ class ToolResultBlock(Widget):
             body.display = value
         except Exception:
             pass
+
+    def action_toggle(self) -> None:
+        self.expanded = not self.expanded
 
     def toggle(self) -> None:
         self.expanded = not self.expanded
