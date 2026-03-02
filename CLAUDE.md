@@ -57,9 +57,10 @@ eavesdrop/
 | Key | Action |
 |---|---|
 | `j`/`k`, arrows | Navigate file browser |
-| `Enter` | Load selected session |
+| `Enter` | Load selected session (when browser focused); toggle focused tool block (when `ToolCallBlock` or `ToolResultBlock` focused) |
+| `Tab` | Move focus between focusable tool blocks in the conversation |
 | `t` | Toggle thinking blocks |
-| `e` | Toggle all tool calls expanded/collapsed |
+| `e` | Toggle all tool calls/results expanded/collapsed |
 | `$` | Toggle token/cost footers |
 | `r` | Reload current file |
 | `q` | Quit |
