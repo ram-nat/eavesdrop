@@ -50,22 +50,32 @@ eavesdrop/
 
 **Global toggle state** lives in `ConversationView` (`_show_thinking`, `_show_usage`, `_tools_expanded`) and is propagated to child widgets. Per-item toggle is handled by the widgets themselves via `Enter` when focused.
 
+**Search state** also lives in `ConversationView` (`_search_matches`, `_search_index`, `_search_active`). `_block_text()` in `conversation.py` extracts searchable text from each block type. The search bar is a docked `Horizontal` (`#search-bar-row`) that is hidden by default and shown on `/`.
+
 **Error handling:** `parse_file()` and `session_summary()` catch `PermissionError`/`OSError` and return an `error` field rather than raising. The browser shows inaccessible files as `[no access]`; the conversation panel shows the error message.
 
 ---
 
 ## Keybindings
 
-| Key | Action |
-|---|---|
-| `j`/`k`, arrows | Navigate file browser |
-| `Enter` | Load session (browser focused) or toggle item (tool/result/response block focused) |
-| `Tab` | Move focus between collapsible blocks in the conversation |
-| `t` | Toggle thinking blocks |
-| `e` | Toggle all collapsible blocks expanded/collapsed |
-| `$` | Toggle token/cost footers |
-| `r` | Reload current file |
-| `q` | Quit |
+| Key | Scope | Action |
+|---|---|---|
+| `j`/`k`, arrows | App | Navigate file browser |
+| `Enter` | App | Load session (browser focused) or toggle item (tool/result/response block focused) |
+| `Space` | Block | Toggle focused collapsible block |
+| `Tab` | App | Move focus between collapsible blocks in the conversation |
+| `t` | App | Toggle thinking blocks |
+| `e` | App | Toggle all collapsible blocks expanded/collapsed |
+| `$` | App | Toggle token/cost footers |
+| `r` | App | Reload current file |
+| `q` | App | Quit |
+| `/` | ConversationView | Open search bar |
+| `Enter` | Search input | Run search; jumps to first match and expands it |
+| `n` | ConversationView | Next match |
+| `N` | ConversationView | Previous match |
+| `Escape` | ConversationView | Close search bar, clear results |
+
+`/`, `n`, `N`, `Escape` are bound on `ConversationView` — they fire when the conversation panel or any block inside it has focus. While the search `Input` is focused, `n`/`N` type into the field; they become navigation keys once focus moves to a matched block.
 
 ---
 
