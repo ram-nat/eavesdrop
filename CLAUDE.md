@@ -12,23 +12,24 @@ Openclaw stores every agent session as a JSONL file under `/home/openclaw/.openc
 
 ## JSONL Format
 
-Each line is a JSON object. Key types:
+Each line is a JSON object. Relevant types:
 
 | `type` | Notes |
 |---|---|
 | `session` | First line. Has `id`, `timestamp`, `cwd`. |
 | `model_change` | Has `modelId`, `provider`. |
 | `message` | Main content. `message.role` is `user`, `assistant`, or `toolResult`. |
-| `thinking_level_change`, `custom` | Ignored by the parser. |
 
 **`message.role` values:**
-- `user` — human turn; content is `[{type: "text"}]`
-- `assistant` — model turn; content can include `{type: "thinking"}`, `{type: "toolCall"}`, `{type: "text"}`; has `model`, `provider`, `usage`, `stopReason`
-- `toolResult` — tool output; top-level role (not nested in a user message); has `toolCallId`, `toolName`, `isError`, `details`
+- `user` — human turn; `content[].type` is `text`
+- `assistant` — model turn; content can include `thinking`, `toolCall`, `text`; has `model`, `provider`, `usage`, `stopReason`
+- `toolResult` — tool output; a top-level role, not nested inside a user message; has `toolCallId`, `toolName`, `isError`, `details`
 
-**`details.aggregated`** on toolResult: openclaw-specific field containing a compact summary of large tool output (e.g. exec results). Prefer this over `content[].text` when present.
+**Notable fields:**
+- `details.aggregated` on toolResult: openclaw-specific compact summary of large output — prefer over `content[].text` when present
+- Assistant text wrapped in `<final>...</final>` is openclaw's response tag; rendered as a collapsible block
 
-**File naming:** active sessions are plain `<uuid>.jsonl`. Inactive files contain `.deleted.` or `.reset.` in the name and are excluded by `scan_sessions()`.
+**File naming:** `<uuid>.jsonl` (active) and `<uuid>.jsonl.reset.<timestamp>` (closed) are both shown. `<uuid>.jsonl.deleted.<timestamp>` is excluded. `session_uuid(path)` extracts the UUID from any variant.
 
 ---
 
@@ -36,19 +37,20 @@ Each line is a JSON object. Key types:
 
 ```
 eavesdrop/
-  parser.py          — JSONL reader; returns ParsedSession(meta, events[])
+  parser.py          — JSONL reader; returns ParsedSession(meta, events[], error)
   app.py             — Textual App; two-panel layout, keybindings, CLI wiring
   __main__.py        — argparse entry point (--session, --dir)
   widgets/
     file_browser.py  — ListView of sessions with per-item metadata
     conversation.py  — VerticalScroll; mounts turn widgets from parsed events
-    turn.py          — Per-turn widgets: UserTurn, AssistantTurn, ToolCallBlock,
-                       ToolResultBlock, ThinkingBlock, UsageFooter, ModelChangeTurn
+    turn.py          — Per-turn widgets for all content block types
 ```
 
-**Data flow:** `scan_sessions()` → `session_summary()` (lightweight, for browser) or `parse_file()` (full parse, for conversation view) → widget tree.
+**Data flow:** `scan_sessions()` → `session_summary()` (lightweight, for browser) or `parse_file()` (full parse, for conversation) → widget tree.
 
-**State managed in `ConversationView`:** `_show_thinking`, `_show_usage`, `_tools_expanded` — toggled by keybinding actions in `app.py`, propagated to child widgets on rebuild or toggle call.
+**Global toggle state** lives in `ConversationView` (`_show_thinking`, `_show_usage`, `_tools_expanded`) and is propagated to child widgets. Per-item toggle is handled by the widgets themselves via `Enter` when focused.
+
+**Error handling:** `parse_file()` and `session_summary()` catch `PermissionError`/`OSError` and return an `error` field rather than raising. The browser shows inaccessible files as `[no access]`; the conversation panel shows the error message.
 
 ---
 
@@ -57,10 +59,10 @@ eavesdrop/
 | Key | Action |
 |---|---|
 | `j`/`k`, arrows | Navigate file browser |
-| `Enter` | Load selected session (when browser focused); toggle focused tool block (when `ToolCallBlock` or `ToolResultBlock` focused) |
-| `Tab` | Move focus between focusable tool blocks in the conversation |
+| `Enter` | Load session (browser focused) or toggle item (tool/result/response block focused) |
+| `Tab` | Move focus between collapsible blocks in the conversation |
 | `t` | Toggle thinking blocks |
-| `e` | Toggle all tool calls/results expanded/collapsed |
+| `e` | Toggle all collapsible blocks expanded/collapsed |
 | `$` | Toggle token/cost footers |
 | `r` | Reload current file |
 | `q` | Quit |
@@ -70,7 +72,7 @@ eavesdrop/
 ## Dependencies
 
 - `textual` — TUI framework (includes `rich`)
-- `pytest`, `pytest-asyncio` — test suite
+- `pytest`, `pytest-asyncio` — test suite only
 - No other third-party dependencies
 
 ---
@@ -81,15 +83,12 @@ eavesdrop/
 venv/bin/pytest tests/ -v
 ```
 
-- `tests/test_parser.py` — 42 tests; uses `tmp_path` to write fixture JSONL files; no live sessions directory touched
-- `tests/test_app.py` — 15 tests; uses `app.run_test()` (Textual's async test pilot) and `monkeypatch` for argparse
+Tests use `tmp_path` fixture JSONL files and Textual's `app.run_test()` async pilot. No live sessions directory is touched.
 
 ---
 
 ## Known Constraints / Future Work
 
-- Tool call expand/collapse: `e` toggles all globally; `Enter` on a focused `ToolCallBlock`, `ToolResultBlock`, or `FinalBlock` toggles that item individually. All three block types are focusable (`can_focus = True`) — tab to navigate between them.
-- Assistant text wrapped in `<final>...</final>` (openclaw's response tag) is detected by `_is_final()`, stripped by `_unwrap_final()`, and rendered as a collapsible `FinalBlock` (collapsed by default, label `[RESPONSE]`). Plain text blocks without the tag render as normal `Static` widgets.
-- Conversation does not render assistant text as markdown (uses plain `Static`); upgrading to `Markdown` widget is straightforward but adds render overhead for large sessions
-- `session_summary()` does a second full file scan separately from `parse_file()`; for very large session dirs this could be unified
-- Default sessions dir is hardcoded to `/home/openclaw/.openclaw/agents/main-cloud/sessions/`; override with `--dir`
+- Assistant text is rendered as plain `Static`, not markdown — easy to upgrade but adds overhead for large sessions
+- `session_summary()` scans the file independently from `parse_file()`; could be unified for very large session dirs
+- Default sessions dir is hardcoded; override with `--dir`
