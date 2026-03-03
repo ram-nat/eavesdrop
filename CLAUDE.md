@@ -63,6 +63,7 @@ eavesdrop/
 | `j`/`k`, arrows | App | Navigate file browser |
 | `Enter` | App | Load session (browser focused) or toggle item (tool/result/response block focused) |
 | `Space` | Block | Toggle focused collapsible block |
+| `y` | ToolCallBlock | Copy `arguments["command"]` to clipboard (no-op if no `command` key) |
 | `Tab` | App | Move focus between collapsible blocks in the conversation |
 | `t` | App | Toggle thinking blocks |
 | `e` | App | Toggle all collapsible blocks expanded/collapsed |

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 from typing import TYPE_CHECKING
 
 from rich.syntax import Syntax
@@ -99,6 +101,7 @@ class ToolCallBlock(Widget):
     BINDINGS = [
         Binding("enter", "toggle", "Toggle", show=True),
         Binding("space", "toggle", "Toggle", show=False),
+        Binding("y", "copy", "Copy", show=True),
     ]
 
     DEFAULT_CSS = """
@@ -152,6 +155,21 @@ class ToolCallBlock(Widget):
 
     def toggle(self) -> None:
         self.expanded = not self.expanded
+
+    def action_copy(self) -> None:
+        args = self._arguments
+        if not isinstance(args, dict) or "command" not in args:
+            return
+        command = args["command"]
+        if not isinstance(command, str):
+            return
+        if os.environ.get("WAYLAND_DISPLAY"):
+            try:
+                subprocess.run(["wl-copy"], input=command.encode(), check=True, timeout=2)
+            except Exception:
+                pass
+        self.app.copy_to_clipboard(command)
+        self.app.notify("Copied", timeout=1.5)
 
 
 class ToolResultBlock(Widget):
