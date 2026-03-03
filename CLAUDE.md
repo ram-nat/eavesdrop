@@ -80,10 +80,21 @@ eavesdrop/
 
 ---
 
+## Clipboard
+
+`y` on a focused `ToolCallBlock` copies `arguments["command"]` to the clipboard. Implementation:
+1. On Wayland (`WAYLAND_DISPLAY` set): shells out to `wl-copy` (from `wl-clipboard`) — required because VTE-based terminals (GNOME Terminal) silently discard OSC 52.
+2. Always calls `app.copy_to_clipboard()` afterwards (OSC 52) — works on kitty, foot, wezterm, etc.
+
+If `wl-copy` is missing: `sudo apt install wl-clipboard`.
+
+---
+
 ## Dependencies
 
 - `textual` — TUI framework (includes `rich`)
 - `pytest`, `pytest-asyncio` — test suite only
+- `wl-clipboard` (system package, optional) — needed for clipboard on Wayland
 - No other third-party dependencies
 
 ---
