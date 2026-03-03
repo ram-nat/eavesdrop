@@ -16,6 +16,7 @@ from eavesdrop.parser import (
     parse_file,
     scan_sessions,
     session_summary,
+    session_uuid,
 )
 
 
@@ -467,47 +468,74 @@ class TestParseFileFullSession:
 # ---------------------------------------------------------------------------
 
 class TestScanSessions:
-    def test_returns_only_active_files(self, tmp_path):
-        (tmp_path / "active1.jsonl").write_text("{}")
-        (tmp_path / "active2.jsonl").write_text("{}")
-        (tmp_path / "old.jsonl.deleted.2026-01-01T00-00-00.000Z").write_text("{}")
-        (tmp_path / "old.jsonl.reset.2026-01-01T00-00-00.000Z").write_text("{}")
+    def test_includes_plain_and_reset_files(self, tmp_path):
+        (tmp_path / "active.jsonl").write_text("{}")
+        (tmp_path / "closed.jsonl.reset.2026-01-01T00-00-00.000Z").write_text("{}")
+        (tmp_path / "gone.jsonl.deleted.2026-01-01T00-00-00.000Z").write_text("{}")
+        (tmp_path / "sessions.json").write_text("{}")
         (tmp_path / "notes.txt").write_text("ignored")
 
         paths = scan_sessions(tmp_path)
         names = {p.name for p in paths}
-        assert names == {"active1.jsonl", "active2.jsonl"}
+        assert names == {
+            "active.jsonl",
+            "closed.jsonl.reset.2026-01-01T00-00-00.000Z",
+        }
+
+    def test_excludes_deleted_files(self, tmp_path):
+        (tmp_path / "a.jsonl.deleted.2026-01-01T00-00-00.000Z").write_text("{}")
+        assert scan_sessions(tmp_path) == []
+
+    def test_excludes_non_jsonl_files(self, tmp_path):
+        (tmp_path / "sessions.json").write_text("{}")
+        (tmp_path / "notes.txt").write_text("{}")
+        assert scan_sessions(tmp_path) == []
 
     def test_sorted_by_mtime_descending(self, tmp_path):
         p1 = tmp_path / "older.jsonl"
-        p2 = tmp_path / "newer.jsonl"
+        p2 = tmp_path / "newer.jsonl.reset.2026-01-02T00-00-00.000Z"
         p1.write_text("{}")
         time.sleep(0.01)
         p2.write_text("{}")
 
         paths = scan_sessions(tmp_path)
-        assert paths[0].name == "newer.jsonl"
+        assert paths[0].name == "newer.jsonl.reset.2026-01-02T00-00-00.000Z"
         assert paths[1].name == "older.jsonl"
 
     def test_empty_directory(self, tmp_path):
         assert scan_sessions(tmp_path) == []
 
-    def test_only_deleted_files(self, tmp_path):
-        (tmp_path / "a.jsonl.deleted.2026-01-01T00-00-00.000Z").write_text("{}")
-        (tmp_path / "b.jsonl.reset.2026-01-01T00-00-00.000Z").write_text("{}")
-        assert scan_sessions(tmp_path) == []
-
-    def test_deleted_substring_only_excluded_when_in_name(self, tmp_path):
-        # "deleted" appearing in the UUID part should not exclude the file
+    def test_deleted_substring_only_excluded_with_dots(self, tmp_path):
         (tmp_path / "deleted-uuid-here.jsonl").write_text("{}")
         paths = scan_sessions(tmp_path)
-        # the rule is .deleted. (with dots), so this should be included
         assert len(paths) == 1
 
     def test_returns_path_objects(self, tmp_path):
         (tmp_path / "s.jsonl").write_text("{}")
         paths = scan_sessions(tmp_path)
         assert all(isinstance(p, Path) for p in paths)
+
+
+# ---------------------------------------------------------------------------
+# session_uuid
+# ---------------------------------------------------------------------------
+
+class TestSessionUuid:
+    def test_plain_jsonl(self, tmp_path):
+        p = tmp_path / "f6ba1f43-a58c-4fa9-8f70-7e7cd9c03e83.jsonl"
+        assert session_uuid(p) == "f6ba1f43-a58c-4fa9-8f70-7e7cd9c03e83"
+
+    def test_reset_file(self, tmp_path):
+        p = tmp_path / "f6ba1f43-a58c-4fa9-8f70-7e7cd9c03e83.jsonl.reset.2026-03-01T20-37-45.416Z"
+        assert session_uuid(p) == "f6ba1f43-a58c-4fa9-8f70-7e7cd9c03e83"
+
+    def test_deleted_file(self, tmp_path):
+        p = tmp_path / "f6ba1f43-a58c-4fa9-8f70-7e7cd9c03e83.jsonl.deleted.2026-03-01T20-37-45.416Z"
+        assert session_uuid(p) == "f6ba1f43-a58c-4fa9-8f70-7e7cd9c03e83"
+
+    def test_short_id_is_first_8_chars(self, tmp_path):
+        p = tmp_path / "f6ba1f43-a58c-4fa9-8f70-7e7cd9c03e83.jsonl.reset.2026-03-01T20-37-45.416Z"
+        assert session_uuid(p)[:8] == "f6ba1f43"
 
 
 # ---------------------------------------------------------------------------

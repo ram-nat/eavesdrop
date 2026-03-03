@@ -171,12 +171,26 @@ def parse_file(path: Path) -> ParsedSession:
     return ParsedSession(meta=meta, events=events)
 
 
+def session_uuid(path: Path) -> str:
+    """Extract the UUID portion from any session filename.
+
+    Handles plain (uuid.jsonl) and closed (uuid.jsonl.reset.TIMESTAMP) variants.
+    """
+    return path.name.split(".jsonl")[0]
+
+
 def scan_sessions(sessions_dir: Path) -> list[Path]:
-    """Return active session files sorted by mtime descending."""
+    """Return active session files sorted by mtime descending.
+
+    Includes both plain (uuid.jsonl) and closed (uuid.jsonl.reset.TIMESTAMP) files.
+    Excludes deleted sessions (uuid.jsonl.deleted.TIMESTAMP) and non-JSONL files.
+    """
     files = []
-    for p in sessions_dir.glob("*.jsonl"):
+    for p in sessions_dir.iterdir():
         name = p.name
-        if ".deleted." in name or ".reset." in name:
+        if ".jsonl" not in name:
+            continue
+        if ".deleted." in name:
             continue
         files.append(p)
     files.sort(key=lambda p: p.stat().st_mtime, reverse=True)

@@ -9,7 +9,7 @@ from textual.app import ComposeResult
 from textual.widgets import ListView, ListItem, Label
 from textual.reactive import reactive
 
-from eavesdrop.parser import scan_sessions, session_summary
+from eavesdrop.parser import scan_sessions, session_summary, session_uuid
 
 
 def _fmt_ts(ts: str) -> str:
@@ -24,7 +24,7 @@ def _fmt_ts(ts: str) -> str:
 
 
 def _short_id(path: Path) -> str:
-    return path.stem[:8]
+    return session_uuid(path)[:8]
 
 
 class SessionItem(ListItem):

@@ -9,7 +9,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.widgets import Footer, Header
 
-from eavesdrop.parser import scan_sessions
+from eavesdrop.parser import scan_sessions, session_uuid
 from eavesdrop.widgets.conversation import ConversationView
 from eavesdrop.widgets.file_browser import FileBrowser
 
@@ -74,7 +74,7 @@ class EavesdropApp(App):
         self._current_path = path
         conv = self.query_one("#conversation", ConversationView)
         conv.load_session(path)
-        short = path.stem[:8]
+        short = session_uuid(path)[:8]
         self.sub_title = short
 
     def action_load_selected(self) -> None:
