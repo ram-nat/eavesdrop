@@ -66,6 +66,7 @@ class Message:
 class ParsedSession:
     meta: SessionMeta | None
     events: list[ModelChange | Message]
+    error: str = ""
 
 
 def _parse_content(content_list: list[dict]) -> list[ContentBlock]:
@@ -108,7 +109,12 @@ def parse_file(path: Path) -> ParsedSession:
     meta: SessionMeta | None = None
     events: list[ModelChange | Message] = []
 
-    with open(path, encoding="utf-8") as f:
+    try:
+        f_handle = open(path, encoding="utf-8")
+    except (PermissionError, OSError) as e:
+        return ParsedSession(meta=None, events=[], error=str(e))
+
+    with f_handle as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -206,7 +212,20 @@ def session_summary(path: Path) -> dict:
     assistant_count = 0
     tool_count = 0
 
-    with open(path, encoding="utf-8") as f:
+    try:
+        f_handle = open(path, encoding="utf-8")
+    except (PermissionError, OSError) as e:
+        return {
+            "path": path,
+            "timestamp": "",
+            "model": "",
+            "provider": "",
+            "message_count": 0,
+            "tool_count": 0,
+            "error": str(e),
+        }
+
+    with f_handle as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -238,4 +257,5 @@ def session_summary(path: Path) -> dict:
         "provider": provider,
         "message_count": user_count + assistant_count,
         "tool_count": tool_count,
+        "error": "",
     }

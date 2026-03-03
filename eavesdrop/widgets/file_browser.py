@@ -40,21 +40,23 @@ class SessionItem(ListItem):
     def compose(self) -> ComposeResult:
         s = self.summary
         short_id = _short_id(s["path"])
+
+        if s.get("error"):
+            yield Label(short_id, classes="session-id-line")
+            yield Label("  [no access]", classes="session-error-line")
+            yield Label("", classes="session-stats-line")
+            return
+
         ts = _fmt_ts(s["timestamp"])
         model = s["model"] or "unknown"
-        # Shorten model name if long
         if len(model) > 22:
             model = model[:20] + ".."
         msgs = s["message_count"]
         tools = s["tool_count"]
 
-        line1 = f"{short_id}  {ts}"
-        line2 = f"  {model}"
-        line3 = f"  {msgs} msgs  {tools} tools"
-
-        yield Label(line1, classes="session-id-line")
-        yield Label(line2, classes="session-model-line")
-        yield Label(line3, classes="session-stats-line")
+        yield Label(f"{short_id}  {ts}", classes="session-id-line")
+        yield Label(f"  {model}", classes="session-model-line")
+        yield Label(f"  {msgs} msgs  {tools} tools", classes="session-stats-line")
 
 
 class FileBrowser(ListView):
@@ -86,6 +88,9 @@ class FileBrowser(ListView):
     }
     FileBrowser > SessionItem .session-stats-line {
         color: $text-disabled;
+    }
+    FileBrowser > SessionItem .session-error-line {
+        color: $error;
     }
     """
 

@@ -55,6 +55,10 @@ class ConversationView(VerticalScroll):
             self.mount(Label("No session loaded.", classes="empty-label"))
             return
 
+        if self._session.error:
+            self.mount(Label(f"Permission denied: {self._session.error}", classes="empty-label"))
+            return
+
         for event in self._session.events:
             if isinstance(event, ModelChange):
                 self.mount(ModelChangeTurn(event))
