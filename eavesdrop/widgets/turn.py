@@ -96,7 +96,10 @@ class ToolCallBlock(Widget):
     can_focus = True
     expanded: reactive[bool] = reactive(False)
 
-    BINDINGS = [Binding("enter", "toggle", "Toggle", show=False)]
+    BINDINGS = [
+        Binding("enter", "toggle", "Toggle", show=True),
+        Binding("space", "toggle", "Toggle", show=False),
+    ]
 
     DEFAULT_CSS = """
     ToolCallBlock {
@@ -111,7 +114,7 @@ class ToolCallBlock(Widget):
         text-style: bold;
     }
     ToolCallBlock .tool-preview {
-        color: $text-muted;
+        color: $text;
     }
     ToolCallBlock .tool-body {
         color: $text;
@@ -157,7 +160,10 @@ class ToolResultBlock(Widget):
     can_focus = True
     expanded: reactive[bool] = reactive(False)
 
-    BINDINGS = [Binding("enter", "toggle", "Toggle", show=False)]
+    BINDINGS = [
+        Binding("enter", "toggle", "Toggle", show=True),
+        Binding("space", "toggle", "Toggle", show=False),
+    ]
 
     DEFAULT_CSS = """
     ToolResultBlock {
@@ -172,7 +178,7 @@ class ToolResultBlock(Widget):
         text-style: bold;
     }
     ToolResultBlock .result-preview {
-        color: $text-muted;
+        color: $text;
     }
     ToolResultBlock .result-body {
         color: $text;
@@ -264,7 +270,10 @@ class FinalBlock(Widget):
     can_focus = True
     expanded: reactive[bool] = reactive(False)
 
-    BINDINGS = [Binding("enter", "toggle", "Toggle", show=False)]
+    BINDINGS = [
+        Binding("enter", "toggle", "Toggle", show=True),
+        Binding("space", "toggle", "Toggle", show=False),
+    ]
 
     DEFAULT_CSS = """
     FinalBlock {
@@ -279,7 +288,7 @@ class FinalBlock(Widget):
         text-style: bold;
     }
     FinalBlock .final-preview {
-        color: $text-muted;
+        color: $text;
     }
     FinalBlock .final-body {
         color: $text;
