@@ -126,7 +126,7 @@ class ToolCallBlock(Widget):
 
     def compose(self) -> ComposeResult:
         yield Label(f"[TOOL CALL: {self._tool_name}]", classes="tool-label")
-        yield Static(_args_preview(self._arguments), classes="tool-preview", id="preview")
+        yield Static(_args_preview(self._arguments), classes="tool-preview", id="preview", markup=False)
         body = Static(
             Syntax(_args_full(self._arguments), "json", theme="monokai", word_wrap=True),
             classes="tool-body",
@@ -204,8 +204,8 @@ class ToolResultBlock(Widget):
         label_class = "result-error" if msg.is_error else "result-label"
         yield Label(f"[TOOL RESULT: {msg.tool_name}]{error_suffix}", classes=label_class)
         full_text = self._get_text()
-        yield Static(_truncate(full_text), classes="result-preview", id="preview")
-        body = Static(full_text, classes="result-body", id="body")
+        yield Static(_truncate(full_text), classes="result-preview", id="preview", markup=False)
+        body = Static(full_text, classes="result-body", id="body", markup=False)
         body.display = False
         yield body
 
@@ -252,7 +252,7 @@ class ThinkingBlock(Widget):
 
     def compose(self) -> ComposeResult:
         yield Label("[THINKING]", classes="thinking-label")
-        yield Static(self._text, classes="thinking-body")
+        yield Static(self._text, classes="thinking-body", markup=False)
 
     def watch_visible(self, value: bool) -> None:
         self.display = value
@@ -293,8 +293,8 @@ class FinalBlock(Widget):
 
     def compose(self) -> ComposeResult:
         yield Label("[RESPONSE]", classes="final-label")
-        yield Static(_truncate(self._text), classes="final-preview", id="preview")
-        body = Static(self._text, classes="final-body", id="body")
+        yield Static(_truncate(self._text), classes="final-preview", id="preview", markup=False)
+        body = Static(self._text, classes="final-body", id="body", markup=False)
         body.display = False
         yield body
 
