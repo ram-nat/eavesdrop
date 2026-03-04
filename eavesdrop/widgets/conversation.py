@@ -17,8 +17,52 @@ from eavesdrop.widgets.turn import (
     ModelChangeTurn,
     ToolCallBlock,
     ToolResultBlock,
+    TurnSeparator,
     UserTurn,
 )
+
+
+def _group_turns(events):
+    """Returns (prologue: list, turns: list[list]).
+
+    A turn starts at each user message and includes all following events
+    up to (but not including) the next user message.
+    """
+    prologue, turns, current = [], [], None
+    for event in events:
+        if isinstance(event, Message) and event.role == "user":
+            if current is not None:
+                turns.append(current)
+            current = [event]
+        else:
+            (current if current is not None else prologue).append(event)
+    if current:
+        turns.append(current)
+    return prologue, turns
+
+
+def _turn_meta(turn_events):
+    """Returns (has_error, corrected, tool_count, total_cost)."""
+    has_error = False
+    tool_count = 0
+    total_cost = 0.0
+    last_assistant = None
+    for event in turn_events:
+        if not isinstance(event, Message):
+            continue
+        if event.role == "toolResult" and event.is_error:
+            has_error = True
+        if event.role == "assistant":
+            last_assistant = event
+            tool_count += sum(1 for c in event.content if c.type == "toolCall")
+            if event.usage:
+                total_cost += event.usage.cost_total or 0.0
+    corrected = (
+        has_error
+        and last_assistant is not None
+        and last_assistant.stop_reason not in ("toolUse", None)
+    )
+    return has_error, corrected, tool_count, total_cost
 
 
 def _block_text(block) -> str:
@@ -45,6 +89,8 @@ class ConversationView(VerticalScroll):
         Binding("n", "next_match", "Next match", show=False),
         Binding("N", "prev_match", "Prev match", show=False),
         Binding("escape", "close_search", "Close search", show=False),
+        Binding("[", "prev_turn", "Prev turn", show=False),
+        Binding("]", "next_turn", "Next turn", show=False),
     ]
 
     DEFAULT_CSS = """
@@ -83,6 +129,9 @@ class ConversationView(VerticalScroll):
         self._search_matches: list = []
         self._search_index: int = 0
         self._search_active: bool = False
+        self._turn_separators: list[TurnSeparator] = []
+        self._turn_groups: list[tuple[TurnSeparator, list[Widget]]] = []
+        self._turns_expanded = True
 
     def compose(self) -> ComposeResult:
         yield Label("No session loaded.", classes="empty-label")
@@ -96,6 +145,34 @@ class ConversationView(VerticalScroll):
         self._tool_result_blocks = []
         self._rebuild()
 
+    def _mount_event(self, event) -> list:
+        """Mount a single event widget and return the list of mounted widgets."""
+        widgets = []
+        if isinstance(event, ModelChange):
+            w = ModelChangeTurn(event)
+            self.mount(w)
+            widgets.append(w)
+        elif isinstance(event, Message):
+            if event.role == "user":
+                w = UserTurn(event)
+                self.mount(w)
+                widgets.append(w)
+            elif event.role == "assistant":
+                at = AssistantTurn(event)
+                self._assistant_turns.append(at)
+                self.mount(at)
+                at.set_thinking_visible(self._show_thinking)
+                at.set_tools_expanded(self._tools_expanded)
+                at.set_usage_visible(self._show_usage)
+                widgets.append(at)
+            elif event.role == "toolResult":
+                tr = ToolResultBlock(event)
+                self._tool_result_blocks.append(tr)
+                self.mount(tr)
+                tr.expanded = self._tools_expanded
+                widgets.append(tr)
+        return widgets
+
     def _rebuild(self) -> None:
         for child in list(self.children):
             if child.id != "search-bar-row":
@@ -104,6 +181,8 @@ class ConversationView(VerticalScroll):
         self._tool_result_blocks = []
         self._search_matches = []
         self._search_index = 0
+        self._turn_separators = []
+        self._turn_groups = []
         try:
             self._update_counter_label()
         except Exception:
@@ -117,24 +196,28 @@ class ConversationView(VerticalScroll):
             self.mount(Label(f"Permission denied: {self._session.error}", classes="empty-label"))
             return
 
-        for event in self._session.events:
-            if isinstance(event, ModelChange):
-                self.mount(ModelChangeTurn(event))
-            elif isinstance(event, Message):
-                if event.role == "user":
-                    self.mount(UserTurn(event))
-                elif event.role == "assistant":
-                    at = AssistantTurn(event)
-                    self._assistant_turns.append(at)
-                    self.mount(at)
-                    at.set_thinking_visible(self._show_thinking)
-                    at.set_tools_expanded(self._tools_expanded)
-                    at.set_usage_visible(self._show_usage)
-                elif event.role == "toolResult":
-                    tr = ToolResultBlock(event)
-                    self._tool_result_blocks.append(tr)
-                    self.mount(tr)
-                    tr.expanded = self._tools_expanded
+        prologue, turns = _group_turns(self._session.events)
+
+        for event in prologue:
+            self._mount_event(event)
+
+        for i, turn_events in enumerate(turns):
+            has_error, corrected, tool_count, total_cost = _turn_meta(turn_events)
+            sep = TurnSeparator(
+                i + 1,
+                turn_events[0].timestamp,
+                tool_count,
+                total_cost,
+                has_error,
+                corrected,
+            )
+            self._turn_separators.append(sep)
+            self.mount(sep)
+
+            turn_widgets: list = []
+            for event in turn_events:
+                turn_widgets.extend(self._mount_event(event))
+            self._turn_groups.append((sep, turn_widgets))
 
         self.scroll_home(animate=False)
 
@@ -160,6 +243,14 @@ class ConversationView(VerticalScroll):
         for at in self._assistant_turns:
             at.set_usage_visible(self._show_usage)
         return self._show_usage
+
+    def toggle_turns(self) -> bool:
+        self._turns_expanded = not self._turns_expanded
+        for sep, widgets in self._turn_groups:
+            sep.expanded = self._turns_expanded
+            for w in widgets:
+                w.display = self._turns_expanded
+        return self._turns_expanded
 
     def _collect_searchable_blocks(self) -> list:
         return [
@@ -225,3 +316,25 @@ class ConversationView(VerticalScroll):
         self._search_index = (self._search_index - 1) % len(self._search_matches)
         self._jump_to(self._search_index)
         self._update_counter_label()
+
+    def on_turn_separator_toggle(self, message: TurnSeparator.Toggle) -> None:
+        sep = message.separator
+        for s, widgets in self._turn_groups:
+            if s is sep:
+                for w in widgets:
+                    w.display = sep.expanded
+                break
+
+    def action_next_turn(self) -> None:
+        y = self.scroll_y
+        for sep in self._turn_separators:
+            if sep.region.y > y + 2:
+                self.scroll_to_widget(sep, animate=False)
+                return
+
+    def action_prev_turn(self) -> None:
+        y = self.scroll_y
+        for sep in reversed(self._turn_separators):
+            if sep.region.y < y - 2:
+                self.scroll_to_widget(sep, animate=False)
+                return

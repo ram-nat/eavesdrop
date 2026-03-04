@@ -11,6 +11,7 @@ from rich.syntax import Syntax
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
+from textual.message import Message as TextualMessage
 from textual.widget import Widget
 from textual.widgets import Static, Label
 from textual.reactive import reactive
@@ -457,3 +458,90 @@ class AssistantTurn(Widget):
     @property
     def tool_calls(self) -> list[ToolCallBlock]:
         return self._tool_calls
+
+
+class TurnSeparator(Widget):
+    """A focusable, collapsible turn separator shown before each user turn."""
+
+    can_focus = True
+    expanded: reactive[bool] = reactive(True)
+
+    class Toggle(TextualMessage):
+        def __init__(self, separator: "TurnSeparator") -> None:
+            super().__init__()
+            self.separator = separator
+
+    BINDINGS = [
+        Binding("enter", "toggle", "Toggle turn", show=True),
+        Binding("space", "toggle", "Toggle turn", show=False),
+    ]
+
+    DEFAULT_CSS = """
+    TurnSeparator {
+        height: 1;
+        padding: 0 1;
+        color: $text-disabled;
+    }
+    TurnSeparator:focus { background: $boost; }
+    TurnSeparator.turn-error { color: $warning; }
+    TurnSeparator.turn-corrected { color: $success; }
+    """
+
+    def __init__(self, turn_num: int, timestamp: str, tool_count: int,
+                 total_cost: float, has_error: bool, corrected: bool, **kwargs):
+        if corrected:
+            css = "turn-corrected"
+        elif has_error:
+            css = "turn-error"
+        else:
+            css = ""
+        existing = kwargs.pop("classes", "")
+        combined = f"{existing} {css}".strip() if existing else css
+        super().__init__(classes=combined, **kwargs)
+        self._turn_num = turn_num
+        self._timestamp = timestamp
+        self._tool_count = tool_count
+        self._total_cost = total_cost
+        self._has_error = has_error
+        self._corrected = corrected
+
+    def _time_str(self) -> str:
+        ts = self._timestamp
+        if not ts:
+            return ""
+        # ISO timestamp: 2026-03-01T12:00:02.000Z → HH:MM
+        try:
+            t_part = ts.split("T")[1]
+            return t_part[:5]
+        except (IndexError, AttributeError):
+            return ts
+
+    def render(self) -> Text:
+        num = self._turn_num
+        time = self._time_str()
+        calls = self._tool_count
+        cost = self._total_cost
+
+        cost_str = f"${cost:.4f}"
+        meta = f"Turn {num}  ·  {time}  ·  {calls} calls  ·  {cost_str}"
+
+        if self._corrected:
+            indicator = "  [!→✓]"
+        elif self._has_error:
+            indicator = "  [!]"
+        else:
+            indicator = ""
+
+        if self.expanded:
+            label = f"── {meta}{indicator} "
+            # Fill remaining space with dashes via Rich
+            t = Text(label)
+            t.append("─" * max(0, 80 - len(label)))
+        else:
+            t = Text(f"▸ {meta}{indicator}")
+
+        return t
+
+    def action_toggle(self) -> None:
+        self.expanded = not self.expanded
+        self.post_message(TurnSeparator.Toggle(self))

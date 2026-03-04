@@ -66,6 +66,7 @@ eavesdrop/
 | `y` | ToolCallBlock | Copy `arguments["command"]` to clipboard (no-op if no `command` key) |
 | `Tab` | App | Move focus between collapsible blocks in the conversation |
 | `t` | App | Toggle thinking blocks |
+| `T` | App | Collapse / expand all turns |
 | `e` | App | Toggle all collapsible blocks expanded/collapsed |
 | `$` | App | Toggle token/cost footers |
 | `r` | App | Reload current file |
@@ -75,6 +76,9 @@ eavesdrop/
 | `n` | ConversationView | Next match |
 | `N` | ConversationView | Previous match |
 | `Escape` | ConversationView | Close search bar, clear results |
+| `]` | ConversationView | Scroll to next turn |
+| `[` | ConversationView | Scroll to previous turn |
+| `Enter`/`Space` | TurnSeparator | Collapse / expand turn |
 
 `/`, `n`, `N`, `Escape` are bound on `ConversationView` — they fire when the conversation panel or any block inside it has focus. While the search `Input` is focused, `n`/`N` type into the field; they become navigation keys once focus moves to a matched block.
 

@@ -36,6 +36,7 @@ class EavesdropApp(App):
     BINDINGS = [
         Binding("q", "quit", "Quit"),
         Binding("t", "toggle_thinking", "Thinking"),
+        Binding("T", "toggle_turns", "Collapse turns"),
         Binding("e", "toggle_tools", "Expand tools"),
         Binding("dollar_sign", "toggle_usage", "Costs", key_display="$"),
         Binding("r", "reload", "Reload"),
@@ -90,6 +91,10 @@ class EavesdropApp(App):
     def action_toggle_tools(self) -> None:
         conv = self.query_one("#conversation", ConversationView)
         conv.toggle_tools()
+
+    def action_toggle_turns(self) -> None:
+        conv = self.query_one("#conversation", ConversationView)
+        conv.toggle_turns()
 
     def action_toggle_usage(self) -> None:
         conv = self.query_one("#conversation", ConversationView)
