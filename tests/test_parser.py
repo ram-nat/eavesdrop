@@ -17,6 +17,7 @@ from eavesdrop.parser import (
     scan_sessions,
     session_summary,
     session_uuid,
+    tool_result_has_error,
 )
 
 
@@ -603,3 +604,52 @@ class TestSessionSummary:
         p.write_text('{"type": "session", "id": "x", "timestamp": "t", "cwd": "/"}\nnot json\n')
         s = session_summary(p)
         assert s["timestamp"] == "t"
+
+
+# ---------------------------------------------------------------------------
+# tool_result_has_error
+# ---------------------------------------------------------------------------
+
+def _make_tr(is_error=False, details=None) -> Message:
+    return Message(
+        id="tr1", parent_id=None, timestamp="t", role="toolResult",
+        content=[ContentBlock(type="text", text="output")],
+        tool_call_id="tc1", tool_name="exec",
+        is_error=is_error,
+        details=details or {},
+    )
+
+
+class TestToolResultHasError:
+    def test_is_error_flag_detected(self):
+        assert tool_result_has_error(_make_tr(is_error=True)) is True
+
+    def test_clean_success_not_error(self):
+        assert tool_result_has_error(_make_tr(details={"exitCode": 0, "status": "completed"})) is False
+
+    def test_exit_code_1(self):
+        assert tool_result_has_error(_make_tr(details={"exitCode": 1, "status": "completed"})) is True
+
+    def test_exit_code_2(self):
+        assert tool_result_has_error(_make_tr(details={"exitCode": 2, "status": "completed"})) is True
+
+    def test_exit_code_126_permission_denied(self):
+        assert tool_result_has_error(_make_tr(details={"exitCode": 126, "status": "completed"})) is True
+
+    def test_exit_code_zero_not_error(self):
+        assert tool_result_has_error(_make_tr(details={"exitCode": 0})) is False
+
+    def test_no_exit_code_running_not_error(self):
+        assert tool_result_has_error(_make_tr(details={"status": "running", "pid": 123})) is False
+
+    def test_status_failed(self):
+        assert tool_result_has_error(_make_tr(details={"status": "failed", "exitCode": 1})) is True
+
+    def test_status_error(self):
+        assert tool_result_has_error(_make_tr(details={"status": "error", "tool": "read", "error": "ENOENT"})) is True
+
+    def test_error_key_present(self):
+        assert tool_result_has_error(_make_tr(details={"error": "ENOENT: no such file"})) is True
+
+    def test_empty_details_not_error(self):
+        assert tool_result_has_error(_make_tr(details={})) is False

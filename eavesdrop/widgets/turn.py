@@ -17,7 +17,7 @@ from textual.widgets import Static, Label
 from textual.reactive import reactive
 from textual.containers import Vertical
 
-from eavesdrop.parser import Message, ModelChange, Usage
+from eavesdrop.parser import Message, ModelChange, Usage, tool_result_has_error
 
 if TYPE_CHECKING:
     pass
@@ -225,8 +225,9 @@ class ToolResultBlock(Widget):
 
     def compose(self) -> ComposeResult:
         msg = self._message
-        error_suffix = " [ERROR]" if msg.is_error else ""
-        label_class = "result-error" if msg.is_error else "result-label"
+        is_err = tool_result_has_error(msg)
+        error_suffix = " [ERROR]" if is_err else ""
+        label_class = "result-error" if is_err else "result-label"
         yield Label(f"[TOOL RESULT: {msg.tool_name}]{error_suffix}", classes=label_class)
         full_text = self._get_text()
         yield Static(_truncate(full_text), classes="result-preview", id="preview", markup=False)

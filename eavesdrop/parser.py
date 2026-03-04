@@ -177,6 +177,27 @@ def parse_file(path: Path) -> ParsedSession:
     return ParsedSession(meta=meta, events=events)
 
 
+def tool_result_has_error(msg: Message) -> bool:
+    """Return True if a toolResult message represents a real error.
+
+    Checks both the protocol-level is_error flag and structural signals in
+    details that openclaw sets even when is_error remains False:
+      - details.exitCode != 0  (exec/process: non-zero shell exit)
+      - details.status in ("failed", "error")  (process timeout; read ENOENT)
+      - details.error key present  (read tool ENOENT)
+    """
+    if msg.is_error:
+        return True
+    d = msg.details
+    if "exitCode" in d and d["exitCode"] != 0:
+        return True
+    if d.get("status") in ("failed", "error"):
+        return True
+    if "error" in d:
+        return True
+    return False
+
+
 def session_uuid(path: Path) -> str:
     """Extract the UUID portion from any session filename.
 

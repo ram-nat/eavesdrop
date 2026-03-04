@@ -10,7 +10,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Input, Label
 
-from eavesdrop.parser import parse_file, Message, ModelChange, ParsedSession
+from eavesdrop.parser import parse_file, Message, ModelChange, ParsedSession, tool_result_has_error
 from eavesdrop.widgets.turn import (
     AssistantTurn,
     FinalBlock,
@@ -50,7 +50,7 @@ def _turn_meta(turn_events):
     for event in turn_events:
         if not isinstance(event, Message):
             continue
-        if event.role == "toolResult" and event.is_error:
+        if event.role == "toolResult" and tool_result_has_error(event):
             has_error = True
         if event.role == "assistant":
             last_assistant = event

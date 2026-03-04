@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from eavesdrop.parser import ContentBlock, Message, ModelChange, Usage
+from eavesdrop.parser import ContentBlock, Message, ModelChange, Usage, tool_result_has_error
 from eavesdrop.widgets.conversation import _group_turns, _turn_meta
 from eavesdrop.widgets.turn import TurnSeparator
 
@@ -203,6 +203,106 @@ class TestTurnMeta:
         has_error, corrected, tool_count, total_cost = _turn_meta(turn)
         assert has_error is True
         assert corrected is False
+
+
+# ---------------------------------------------------------------------------
+# Unit: _tool_result_has_error (structural detection)
+# ---------------------------------------------------------------------------
+
+def _make_tool_result_with_details(is_error=False, details=None) -> Message:
+    return Message(
+        id="tr1", parent_id=None, timestamp="t", role="toolResult",
+        content=[ContentBlock(type="text", text="output")],
+        tool_call_id="tc1", tool_name="exec",
+        is_error=is_error,
+        details=details or {},
+    )
+
+
+class TestToolResultHasError:
+    def test_is_error_true_detected(self):
+        msg = _make_tool_result_with_details(is_error=True)
+        assert tool_result_has_error(msg) is True
+
+    def test_clean_success_not_error(self):
+        msg = _make_tool_result_with_details(details={"exitCode": 0, "status": "completed"})
+        assert tool_result_has_error(msg) is False
+
+    def test_nonzero_exit_code_detected(self):
+        msg = _make_tool_result_with_details(details={"exitCode": 1, "status": "completed"})
+        assert tool_result_has_error(msg) is True
+
+    def test_exit_code_2_detected(self):
+        msg = _make_tool_result_with_details(details={"exitCode": 2, "status": "completed"})
+        assert tool_result_has_error(msg) is True
+
+    def test_exit_code_126_detected(self):
+        # Permission denied on executable
+        msg = _make_tool_result_with_details(details={"exitCode": 126, "status": "completed"})
+        assert tool_result_has_error(msg) is True
+
+    def test_exit_code_zero_not_error(self):
+        msg = _make_tool_result_with_details(details={"exitCode": 0, "status": "completed"})
+        assert tool_result_has_error(msg) is False
+
+    def test_no_exit_code_key_not_error(self):
+        # Running process has no exitCode yet
+        msg = _make_tool_result_with_details(details={"status": "running", "pid": 1234})
+        assert tool_result_has_error(msg) is False
+
+    def test_status_failed_detected(self):
+        # process tool: timeout / crash
+        msg = _make_tool_result_with_details(details={"status": "failed", "exitCode": 1})
+        assert tool_result_has_error(msg) is True
+
+    def test_status_error_detected(self):
+        # read tool: ENOENT
+        msg = _make_tool_result_with_details(
+            details={"status": "error", "tool": "read", "error": "ENOENT: no such file"}
+        )
+        assert tool_result_has_error(msg) is True
+
+    def test_error_key_present_detected(self):
+        # read tool ENOENT without status field
+        msg = _make_tool_result_with_details(details={"error": "ENOENT: no such file or directory"})
+        assert tool_result_has_error(msg) is True
+
+    def test_empty_details_not_error(self):
+        msg = _make_tool_result_with_details(details={})
+        assert tool_result_has_error(msg) is False
+
+    def test_status_completed_exitcode_zero_not_error(self):
+        msg = _make_tool_result_with_details(details={"status": "completed", "exitCode": 0})
+        assert tool_result_has_error(msg) is False
+
+
+class TestTurnMetaStructuralErrors:
+    def test_nonzero_exitcode_marks_turn_errored(self):
+        tr = _make_tool_result_with_details(details={"exitCode": 1, "status": "completed"})
+        turn = [_make_user(), _make_assistant(stop_reason="stop"), tr]
+        has_error, corrected, _, _ = _turn_meta(turn)
+        assert has_error is True
+
+    def test_status_failed_marks_turn_errored(self):
+        tr = _make_tool_result_with_details(details={"status": "failed", "exitCode": 1})
+        turn = [_make_user(), tr, _make_assistant(stop_reason="stop")]
+        has_error, corrected, _, _ = _turn_meta(turn)
+        assert has_error is True
+        assert corrected is True
+
+    def test_read_enoent_marks_turn_errored(self):
+        tr = _make_tool_result_with_details(
+            details={"status": "error", "tool": "read", "error": "ENOENT: …"}
+        )
+        turn = [_make_user(), tr, _make_assistant(stop_reason="stop")]
+        has_error, corrected, _, _ = _turn_meta(turn)
+        assert has_error is True
+
+    def test_exitcode_zero_does_not_mark_error(self):
+        tr = _make_tool_result_with_details(details={"exitCode": 0, "status": "completed"})
+        turn = [_make_user(), _make_assistant(stop_reason="stop"), tr]
+        has_error, _, _, _ = _turn_meta(turn)
+        assert has_error is False
 
 
 # ---------------------------------------------------------------------------
