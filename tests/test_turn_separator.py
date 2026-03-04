@@ -333,17 +333,17 @@ class TestTurnSeparatorWidget:
         assert "turn-error" not in sep.classes
         assert "turn-corrected" not in sep.classes
 
-    def test_expanded_defaults_to_true(self):
+    def test_expanded_defaults_to_false(self):
         sep = self._make_sep()
-        assert sep.expanded is True
+        assert sep.expanded is False
 
     def test_action_toggle_flips_expanded(self):
         sep = self._make_sep()
-        assert sep.expanded is True
-        sep.action_toggle()
         assert sep.expanded is False
         sep.action_toggle()
         assert sep.expanded is True
+        sep.action_toggle()
+        assert sep.expanded is False
 
     def test_can_focus_is_true(self):
         sep = self._make_sep()
@@ -418,7 +418,7 @@ class TestTurnSeparatorIntegration:
             assert "turn-corrected" in sep.classes
 
     @pytest.mark.asyncio
-    async def test_enter_on_separator_collapses_turn(self, tmp_path):
+    async def test_enter_on_separator_expands_turn(self, tmp_path):
         p = tmp_path / "s.jsonl"
         _write_jsonl(p, _session_lines() + [
             _user_line(),
@@ -427,29 +427,13 @@ class TestTurnSeparatorIntegration:
         app = EavesdropApp(sessions_dir=tmp_path, initial_session=p)
         async with app.run_test(size=(120, 40)) as pilot:
             sep = app.query_one(TurnSeparator)
-            assert sep.expanded is True
-            sep.focus()
-            await pilot.press("enter")
             assert sep.expanded is False
-
-    @pytest.mark.asyncio
-    async def test_enter_again_expands_turn(self, tmp_path):
-        p = tmp_path / "s.jsonl"
-        _write_jsonl(p, _session_lines() + [
-            _user_line(),
-            _assistant_line(),
-        ])
-        app = EavesdropApp(sessions_dir=tmp_path, initial_session=p)
-        async with app.run_test(size=(120, 40)) as pilot:
-            sep = app.query_one(TurnSeparator)
             sep.focus()
-            await pilot.press("enter")
-            assert sep.expanded is False
             await pilot.press("enter")
             assert sep.expanded is True
 
     @pytest.mark.asyncio
-    async def test_collapse_hides_child_widgets(self, tmp_path):
+    async def test_enter_again_collapses_turn(self, tmp_path):
         p = tmp_path / "s.jsonl"
         _write_jsonl(p, _session_lines() + [
             _user_line(),
@@ -457,17 +441,46 @@ class TestTurnSeparatorIntegration:
         ])
         app = EavesdropApp(sessions_dir=tmp_path, initial_session=p)
         async with app.run_test(size=(120, 40)) as pilot:
-            from eavesdrop.widgets.turn import UserTurn, AssistantTurn
             sep = app.query_one(TurnSeparator)
             sep.focus()
             await pilot.press("enter")
-            # All turn child widgets should be hidden
+            assert sep.expanded is True
+            await pilot.press("enter")
+            assert sep.expanded is False
+
+    @pytest.mark.asyncio
+    async def test_turns_hidden_on_load(self, tmp_path):
+        p = tmp_path / "s.jsonl"
+        _write_jsonl(p, _session_lines() + [
+            _user_line(),
+            _assistant_line(),
+        ])
+        app = EavesdropApp(sessions_dir=tmp_path, initial_session=p)
+        async with app.run_test(size=(120, 40)) as pilot:
             from eavesdrop.widgets.conversation import ConversationView
             cv = app.query_one(ConversationView)
+            for sep, widgets in cv._turn_groups:
+                for w in widgets:
+                    assert w.display is False
+
+    @pytest.mark.asyncio
+    async def test_expand_shows_child_widgets(self, tmp_path):
+        p = tmp_path / "s.jsonl"
+        _write_jsonl(p, _session_lines() + [
+            _user_line(),
+            _assistant_line(),
+        ])
+        app = EavesdropApp(sessions_dir=tmp_path, initial_session=p)
+        async with app.run_test(size=(120, 40)) as pilot:
+            from eavesdrop.widgets.conversation import ConversationView
+            cv = app.query_one(ConversationView)
+            sep = app.query_one(TurnSeparator)
+            sep.focus()
+            await pilot.press("enter")
             for s, widgets in cv._turn_groups:
                 if s is sep:
                     for w in widgets:
-                        assert w.display is False
+                        assert w.display is True
                     break
 
     @pytest.mark.asyncio
@@ -523,36 +536,24 @@ class TestToggleAllTurns:
         return p
 
     @pytest.mark.asyncio
-    async def test_T_collapses_all_separators(self, tmp_path):
+    async def test_T_expands_all_separators(self, tmp_path):
         p = self._two_turn_session(tmp_path)
         app = EavesdropApp(sessions_dir=tmp_path, initial_session=p)
         async with app.run_test(size=(120, 40)) as pilot:
             seps = list(app.query(TurnSeparator))
-            assert all(s.expanded for s in seps)
-            await pilot.press("T")
             assert all(not s.expanded for s in seps)
+            await pilot.press("T")
+            assert all(s.expanded for s in seps)
 
     @pytest.mark.asyncio
-    async def test_T_again_expands_all_separators(self, tmp_path):
+    async def test_T_again_collapses_all_separators(self, tmp_path):
         p = self._two_turn_session(tmp_path)
         app = EavesdropApp(sessions_dir=tmp_path, initial_session=p)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.press("T")
             await pilot.press("T")
             seps = list(app.query(TurnSeparator))
-            assert all(s.expanded for s in seps)
-
-    @pytest.mark.asyncio
-    async def test_T_hides_child_widgets_when_collapsing(self, tmp_path):
-        p = self._two_turn_session(tmp_path)
-        app = EavesdropApp(sessions_dir=tmp_path, initial_session=p)
-        async with app.run_test(size=(120, 40)) as pilot:
-            from eavesdrop.widgets.conversation import ConversationView
-            cv = app.query_one(ConversationView)
-            await pilot.press("T")
-            for sep, widgets in cv._turn_groups:
-                for w in widgets:
-                    assert w.display is False
+            assert all(not s.expanded for s in seps)
 
     @pytest.mark.asyncio
     async def test_T_shows_child_widgets_when_expanding(self, tmp_path):
@@ -562,10 +563,22 @@ class TestToggleAllTurns:
             from eavesdrop.widgets.conversation import ConversationView
             cv = app.query_one(ConversationView)
             await pilot.press("T")
-            await pilot.press("T")
             for sep, widgets in cv._turn_groups:
                 for w in widgets:
                     assert w.display is True
+
+    @pytest.mark.asyncio
+    async def test_T_hides_child_widgets_when_collapsing(self, tmp_path):
+        p = self._two_turn_session(tmp_path)
+        app = EavesdropApp(sessions_dir=tmp_path, initial_session=p)
+        async with app.run_test(size=(120, 40)) as pilot:
+            from eavesdrop.widgets.conversation import ConversationView
+            cv = app.query_one(ConversationView)
+            await pilot.press("T")
+            await pilot.press("T")
+            for sep, widgets in cv._turn_groups:
+                for w in widgets:
+                    assert w.display is False
 
     @pytest.mark.asyncio
     async def test_toggle_turns_method_returns_new_state(self, tmp_path):
@@ -575,6 +588,6 @@ class TestToggleAllTurns:
             from eavesdrop.widgets.conversation import ConversationView
             cv = app.query_one(ConversationView)
             result = cv.toggle_turns()
-            assert result is False
-            result = cv.toggle_turns()
             assert result is True
+            result = cv.toggle_turns()
+            assert result is False

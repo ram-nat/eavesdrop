@@ -465,7 +465,7 @@ class TurnSeparator(Widget):
     """A focusable, collapsible turn separator shown before each user turn."""
 
     can_focus = True
-    expanded: reactive[bool] = reactive(True)
+    expanded: reactive[bool] = reactive(False)
 
     class Toggle(TextualMessage):
         def __init__(self, separator: "TurnSeparator") -> None:

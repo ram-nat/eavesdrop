@@ -131,7 +131,7 @@ class ConversationView(VerticalScroll):
         self._search_active: bool = False
         self._turn_separators: list[TurnSeparator] = []
         self._turn_groups: list[tuple[TurnSeparator, list[Widget]]] = []
-        self._turns_expanded = True
+        self._turns_expanded = False
 
     def compose(self) -> ComposeResult:
         yield Label("No session loaded.", classes="empty-label")
@@ -218,6 +218,12 @@ class ConversationView(VerticalScroll):
             for event in turn_events:
                 turn_widgets.extend(self._mount_event(event))
             self._turn_groups.append((sep, turn_widgets))
+
+        # Collapse all turns on load/reload
+        self._turns_expanded = False
+        for sep, widgets in self._turn_groups:
+            for w in widgets:
+                w.display = False
 
         self.scroll_home(animate=False)
 
