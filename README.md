@@ -4,8 +4,8 @@ Terminal UI for browsing openclaw session files. Two-panel layout: session list 
 
 This allows debugging and understanding of what the agent does in response to anything you ask. The session is organized in the form of turns where each turn is a user's request, 0 or more tool calls and other intermediate steps by the LLM and the final response.
 
-## Why? 
-- I have setup Openclaw where the cloud LLM (which is much more capable), provides prompts + directions to the local model hosted on my puny 12 GB VRAM 3060. 
+## Why?
+- I've set up Openclaw where the cloud LLM (which is much more capable), provides prompts + directions to the local model hosted on my puny 12 GB VRAM 3060. 
 - Even though the cloud LLM is capable, sometimes it struggles a bit to find the right tools or the right way to use the tool.
 - When I write skills, I may not be clear enough or there can be mistakes that cause the LLM to struggle.
 - Finally, the tools themselves may have bugs, the environment setup may have issues.
