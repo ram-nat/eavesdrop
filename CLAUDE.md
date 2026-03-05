@@ -6,7 +6,7 @@ TUI for browsing openclaw session JSONL files. Built with Textual (Python).
 
 ## Purpose
 
-Openclaw stores every agent session as a JSONL file under `/home/openclaw/.openclaw/agents/main-cloud/sessions/`. Each line is a typed event. This tool provides a two-panel browser: session list on the left, conversation thread on the right.
+Openclaw stores every agent session as a JSONL file under `~/.openclaw/agents/main-cloud/sessions/`. Each line is a typed event. This tool provides a two-panel browser: session list on the left, conversation thread on the right.
 
 ---
 

@@ -14,7 +14,12 @@ from eavesdrop.parser import scan_sessions, session_uuid
 from eavesdrop.widgets.conversation import ConversationView
 from eavesdrop.widgets.file_browser import FileBrowser
 
-DEFAULT_SESSIONS_DIR = Path("/home/openclaw/.openclaw/agents/main-cloud/sessions")
+DEFAULT_SESSIONS_DIR = Path(
+    os.environ.get(
+        "EAVESDROP_SESSIONS_DIR",
+        Path.home() / ".openclaw" / "agents" / "main-cloud" / "sessions",
+    )
+)
 
 
 class EavesdropApp(App):

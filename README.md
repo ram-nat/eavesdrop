@@ -1,6 +1,6 @@
 # eavesdrop
 
-Terminal UI for browsing [openclaw](https://github.com) session files. Two-panel layout: session list on the left, conversation thread on the right.
+Terminal UI for browsing openclaw session files. Two-panel layout: session list on the left, conversation thread on the right.
 
 Built with [Textual](https://github.com/Textualize/textual).
 
@@ -15,7 +15,7 @@ Built with [Textual](https://github.com/Textualize/textual).
 ## Install
 
 ```bash
-git clone https://github.com/your-username/eavesdrop
+git clone https://github.com/ram-nat/eavesdrop
 cd eavesdrop
 uv venv venv
 uv pip install -e .
@@ -34,7 +34,7 @@ eavesdrop --dir /path/to/sessions
 eavesdrop --session /path/to/session.jsonl
 ```
 
-The default sessions directory is `/home/openclaw/.openclaw/agents/main-cloud/sessions`.
+The default sessions directory is `~/.openclaw/agents/main-cloud/sessions`.
 
 ## Keybindings
 
@@ -64,7 +64,7 @@ Eavesdrop reads JSONL files where each line is a typed event (`session`, `model_
 
 MIT License
 
-Copyright (c) 2026
+Copyright (c) 2026 ramnat
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
