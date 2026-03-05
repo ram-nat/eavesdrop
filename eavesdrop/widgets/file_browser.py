@@ -18,7 +18,7 @@ def _fmt_ts(ts: str) -> str:
     try:
         dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
         local = dt.astimezone()
-        return local.strftime("%m-%d %H:%M")
+        return local.strftime("%Y-%m-%d %H:%M")
     except Exception:
         return ts[:16]
 
@@ -47,7 +47,7 @@ class SessionItem(ListItem):
             yield Label("", classes="session-stats-line")
             return
 
-        ts = _fmt_ts(s["timestamp"])
+        ts = _fmt_ts(s.get("last_event_ts") or s["timestamp"])
         model = s["model"] or "unknown"
         if len(model) > 22:
             model = model[:20] + ".."

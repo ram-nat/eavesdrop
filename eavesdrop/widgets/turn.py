@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from rich.syntax import Syntax
@@ -510,12 +511,14 @@ class TurnSeparator(Widget):
         ts = self._timestamp
         if not ts:
             return ""
-        # ISO timestamp: 2026-03-01T12:00:02.000Z → HH:MM
         try:
-            t_part = ts.split("T")[1]
-            return t_part[:5]
-        except (IndexError, AttributeError):
-            return ts
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            return dt.astimezone().strftime("%H:%M")
+        except Exception:
+            try:
+                return ts.split("T")[1][:5]
+            except (IndexError, AttributeError):
+                return ts
 
     def render(self) -> Text:
         num = self._turn_num

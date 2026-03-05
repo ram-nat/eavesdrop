@@ -227,6 +227,7 @@ def scan_sessions(sessions_dir: Path) -> list[Path]:
 def session_summary(path: Path) -> dict:
     """Return lightweight metadata for the file browser without full parse."""
     meta_ts = ""
+    last_event_ts = ""
     model = ""
     provider = ""
     user_count = 0
@@ -239,6 +240,7 @@ def session_summary(path: Path) -> dict:
         return {
             "path": path,
             "timestamp": "",
+            "last_event_ts": "",
             "model": "",
             "provider": "",
             "message_count": 0,
@@ -256,8 +258,11 @@ def session_summary(path: Path) -> dict:
             except json.JSONDecodeError:
                 continue
             t = obj.get("type")
+            ts = obj.get("timestamp", "")
+            if ts:
+                last_event_ts = ts
             if t == "session":
-                meta_ts = obj.get("timestamp", "")
+                meta_ts = ts
             elif t == "model_change" and not model:
                 model = obj.get("modelId", "")
                 provider = obj.get("provider", "")
@@ -274,6 +279,7 @@ def session_summary(path: Path) -> dict:
     return {
         "path": path,
         "timestamp": meta_ts,
+        "last_event_ts": last_event_ts,
         "model": model,
         "provider": provider,
         "message_count": user_count + assistant_count,

@@ -560,6 +560,25 @@ class TestSessionSummary:
         assert s["message_count"] == 2  # 1 user + 1 assistant
         assert s["tool_count"] == 0  # default assistant message has no tool calls
         assert s["path"] == p
+        # last_event_ts is the toolResult timestamp (last in file)
+        assert s["last_event_ts"] == "2026-03-01T12:00:04.000Z"
+
+    def test_last_event_ts_tracks_final_event(self, tmp_path):
+        p = tmp_path / "s.jsonl"
+        _write_jsonl(p, [
+            _session_event(),
+            _user_message(),
+            _assistant_message(),
+        ])
+        s = session_summary(p)
+        # assistant message is last, timestamp 2026-03-01T12:00:03.000Z
+        assert s["last_event_ts"] == "2026-03-01T12:00:03.000Z"
+
+    def test_last_event_ts_empty_for_empty_file(self, tmp_path):
+        p = tmp_path / "empty.jsonl"
+        p.write_text("")
+        s = session_summary(p)
+        assert s["last_event_ts"] == ""
 
     def test_tool_call_counting(self, tmp_path):
         p = tmp_path / "s.jsonl"
@@ -584,6 +603,7 @@ class TestSessionSummary:
         p.write_text("")
         s = session_summary(p)
         assert s["timestamp"] == ""
+        assert s["last_event_ts"] == ""
         assert s["model"] == ""
         assert s["message_count"] == 0
         assert s["tool_count"] == 0
