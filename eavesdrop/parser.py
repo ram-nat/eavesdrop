@@ -233,6 +233,10 @@ def session_summary(path: Path) -> dict:
     user_count = 0
     assistant_count = 0
     tool_count = 0
+    has_error = False
+    total_cost = 0.0
+    last_assistant_stop_reason = ""
+    last_assistant_after_error = False
 
     try:
         f_handle = open(path, encoding="utf-8")
@@ -245,6 +249,9 @@ def session_summary(path: Path) -> dict:
             "provider": "",
             "message_count": 0,
             "tool_count": 0,
+            "has_error": False,
+            "has_corrected": False,
+            "total_cost": 0.0,
             "error": str(e),
         }
 
@@ -267,14 +274,38 @@ def session_summary(path: Path) -> dict:
                 model = obj.get("modelId", "")
                 provider = obj.get("provider", "")
             elif t == "message":
-                role = obj.get("message", {}).get("role", "")
+                msg = obj.get("message", {})
+                role = msg.get("role", "")
                 if role == "user":
                     user_count += 1
                 elif role == "assistant":
                     assistant_count += 1
-                    for c in obj.get("message", {}).get("content", []):
+                    for c in msg.get("content", []):
                         if c.get("type") == "toolCall":
                             tool_count += 1
+                    usage = msg.get("usage") or {}
+                    cost = usage.get("cost", {}) or {}
+                    total_cost += cost.get("total", 0.0)
+                    last_assistant_stop_reason = msg.get("stopReason", "")
+                    last_assistant_after_error = has_error
+                elif role == "toolResult":
+                    # Build a minimal Message-like object to reuse tool_result_has_error
+                    details = msg.get("details", {}) or {}
+                    is_err = msg.get("isError", False)
+                    if is_err:
+                        has_error = True
+                    elif "exitCode" in details and details["exitCode"] != 0:
+                        has_error = True
+                    elif details.get("status") in ("failed", "error"):
+                        has_error = True
+                    elif "error" in details:
+                        has_error = True
+
+    has_corrected = (
+        has_error
+        and last_assistant_after_error
+        and last_assistant_stop_reason not in ("toolUse", "")
+    )
 
     return {
         "path": path,
@@ -284,5 +315,8 @@ def session_summary(path: Path) -> dict:
         "provider": provider,
         "message_count": user_count + assistant_count,
         "tool_count": tool_count,
+        "has_error": has_error,
+        "has_corrected": has_corrected,
+        "total_cost": total_cost,
         "error": "",
     }

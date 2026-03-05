@@ -101,9 +101,14 @@ class EavesdropApp(App):
         conv.toggle_usage()
 
     def action_reload(self) -> None:
-        if self._current_path:
+        browser = self.query_one("#browser", FileBrowser)
+        current_path = self._current_path
+        browser.load_sessions()
+        if current_path:
+            # Restore selection to the previously loaded session
+            browser.select_path(current_path)
             conv = self.query_one("#conversation", ConversationView)
-            conv.reload(self._current_path)
+            conv.reload(current_path)
 
     def action_cursor_down(self) -> None:
         browser = self.query_one("#browser", FileBrowser)

@@ -53,10 +53,24 @@ class SessionItem(ListItem):
             model = model[:20] + ".."
         msgs = s["message_count"]
         tools = s["tool_count"]
+        cost = s.get("total_cost", 0.0)
+        has_error = s.get("has_error", False)
+        has_corrected = s.get("has_corrected", False)
+
+        badge_parts = []
+        if has_corrected:
+            badge_parts.append("[!→✓]")
+        elif has_error:
+            badge_parts.append("[!]")
+        if cost:
+            badge_parts.append(f"${cost:.3f}")
 
         yield Label(f"{short_id}  {ts}", classes="session-id-line")
         yield Label(f"  {model}", classes="session-model-line")
-        yield Label(f"  {msgs} msgs  {tools} tools", classes="session-stats-line")
+        stats = f"  {msgs} msgs  {tools} tools"
+        if badge_parts:
+            stats += "  " + " ".join(badge_parts)
+        yield Label(stats, classes="session-stats-line")
 
 
 class FileBrowser(ListView):
@@ -115,3 +129,11 @@ class FileBrowser(ListView):
         if isinstance(item, SessionItem):
             return item.session_path
         return None
+
+    def select_path(self, path: Path) -> None:
+        """Move highlight to the item matching path, if present."""
+        target_uuid = session_uuid(path)
+        for i, item in enumerate(self.query(SessionItem)):
+            if session_uuid(item.session_path) == target_uuid:
+                self.index = i
+                return

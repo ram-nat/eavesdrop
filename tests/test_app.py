@@ -174,6 +174,24 @@ class TestKeybindingActions:
             await pilot.press("r")
             assert app._current_path == original_path
 
+    @pytest.mark.asyncio
+    async def test_reload_also_refreshes_browser(self, tmp_path):
+        import time
+        p = tmp_path / "s.jsonl"
+        _minimal_session(p)
+        app = EavesdropApp(sessions_dir=tmp_path, initial_session=p)
+        async with app.run_test(size=(80, 24)) as pilot:
+            from eavesdrop.widgets.file_browser import FileBrowser, SessionItem
+            browser = app.query_one("#browser", FileBrowser)
+            initial_count = len(list(browser.query(SessionItem)))
+            # Add a new session file
+            time.sleep(0.01)
+            p2 = tmp_path / "new.jsonl"
+            _minimal_session(p2)
+            await pilot.press("r")
+            new_count = len(list(browser.query(SessionItem)))
+            assert new_count == initial_count + 1
+
 
 # ---------------------------------------------------------------------------
 # __main__ argparse

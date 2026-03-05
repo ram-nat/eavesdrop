@@ -625,6 +625,52 @@ class TestSessionSummary:
         s = session_summary(p)
         assert s["timestamp"] == "t"
 
+    def test_has_error_false_for_clean_session(self, tmp_path):
+        p = tmp_path / "s.jsonl"
+        _write_jsonl(p, [_user_message(), _assistant_message(), _tool_result_message(is_error=False)])
+        s = session_summary(p)
+        assert s["has_error"] is False
+        assert s["has_corrected"] is False
+
+    def test_has_error_true_for_is_error_flag(self, tmp_path):
+        p = tmp_path / "s.jsonl"
+        _write_jsonl(p, [_user_message(), _assistant_message(), _tool_result_message(is_error=True)])
+        s = session_summary(p)
+        assert s["has_error"] is True
+
+    def test_has_error_true_for_nonzero_exit_code(self, tmp_path):
+        p = tmp_path / "s.jsonl"
+        _write_jsonl(p, [_user_message(), _assistant_message(),
+                         _tool_result_message(details={"exitCode": 1, "status": "completed"})])
+        s = session_summary(p)
+        assert s["has_error"] is True
+
+    def test_has_error_false_for_zero_exit_code(self, tmp_path):
+        p = tmp_path / "s.jsonl"
+        _write_jsonl(p, [_user_message(), _assistant_message(),
+                         _tool_result_message(details={"exitCode": 0})])
+        s = session_summary(p)
+        assert s["has_error"] is False
+
+    def test_total_cost_accumulates(self, tmp_path):
+        p = tmp_path / "s.jsonl"
+        _write_jsonl(p, [_user_message(), _assistant_message()])
+        s = session_summary(p)
+        assert abs(s["total_cost"] - 0.015) < 1e-9
+
+    def test_total_cost_zero_for_no_assistant(self, tmp_path):
+        p = tmp_path / "s.jsonl"
+        _write_jsonl(p, [_user_message()])
+        s = session_summary(p)
+        assert s["total_cost"] == 0.0
+
+    def test_has_error_fields_in_error_return(self, tmp_path):
+        # PermissionError path should still return has_error/has_corrected/total_cost
+        s = session_summary(tmp_path / "nonexistent_xyz.jsonl")
+        assert "has_error" in s
+        assert "has_corrected" in s
+        assert "total_cost" in s
+
 
 # ---------------------------------------------------------------------------
 # tool_result_has_error
