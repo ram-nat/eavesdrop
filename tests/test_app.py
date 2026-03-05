@@ -75,6 +75,13 @@ class TestAppStartup:
             assert app.sub_title == ""
 
     @pytest.mark.asyncio
+    async def test_mounts_without_crashing_missing_dir(self, tmp_path):
+        missing = tmp_path / "does-not-exist"
+        app = EavesdropApp(sessions_dir=missing)
+        async with app.run_test(size=(80, 24)) as pilot:
+            assert app.sub_title == ""
+
+    @pytest.mark.asyncio
     async def test_auto_selects_most_recent_session(self, tmp_path):
         import time
         p1 = tmp_path / "older.jsonl"

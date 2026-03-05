@@ -1,28 +1,55 @@
 # eavesdrop
 
-Terminal UI for browsing openclaw session files. Two-panel layout: session list on the left, conversation thread on the right.
+A terminal UI for inspecting openclaw session JSONL files.
 
-This allows debugging and understanding of what the agent does in response to anything you ask. The session is organized in the form of turns where each turn is a user's request, 0 or more tool calls and other intermediate steps by the LLM and the final response.
+You get a fast two-pane workflow:
+- Left: session browser (model, message/tool counts, status badges, cost)
+- Right: turn-by-turn timeline (user, assistant, tool calls/results, final response)
 
-## Why?
-- I've set up Openclaw where the cloud LLM (which is much more capable), provides prompts + directions to the local model hosted on my puny 12 GB VRAM 3060. 
-- Even though the cloud LLM is capable, sometimes it struggles a bit to find the right tools or the right way to use the tool.
-- When I write skills, I may not be clear enough or there can be mistakes that cause the LLM to struggle.
-- Finally, the tools themselves may have bugs, the environment setup may have issues.
-
-Having this turn based viewer helps me understand and debug such potential issues.
+`eavesdrop` is built for debugging agent behavior: what the model tried, where tools failed, and how it recovered.
 
 Built with [Textual](https://github.com/Textualize/textual).
 
-<!-- screenshot -->
+## Highlights
+
+- Turn separators with error/corrected indicators
+- Collapsible tool calls, tool results, and final responses
+- In-session search with next/previous navigation
+- Follow mode for live sessions (`f`)
+- Local-time display in the session browser
+- Copy tool command (`y`) from a focused tool call
 
 ## Requirements
 
 - Python 3.12+
-- Sessions produced by openclaw (JSONL files)
-- `wl-clipboard` (optional, for clipboard on Wayland): `sudo apt install wl-clipboard`
+- Openclaw session files (JSONL)
+- Optional on Wayland for reliable clipboard: `sudo apt install wl-clipboard`
 
 ## Install
+
+### Install as a package (recommended for normal use)
+
+```bash
+# After publishing to PyPI:
+pip install eavesdrop
+```
+
+or isolated tool install:
+
+```bash
+pipx install eavesdrop
+```
+
+### Install from a built wheel (no editable mode)
+
+```bash
+git clone https://github.com/ram-nat/eavesdrop
+cd eavesdrop
+uv build
+pip install dist/eavesdrop-*.whl
+```
+
+### Dev install (editable)
 
 ```bash
 git clone https://github.com/ram-nat/eavesdrop
@@ -31,7 +58,7 @@ uv venv
 uv pip install -e .
 ```
 
-## Usage
+## Quick Start
 
 ```bash
 # Browse the default sessions directory
@@ -40,11 +67,27 @@ eavesdrop
 # Browse a custom directory
 eavesdrop --dir /path/to/sessions
 
-# Open a specific session file directly
+# Open one session directly
 eavesdrop --session /path/to/session.jsonl
+
+# Try with bundled demo data
+eavesdrop --dir demo/sessions
 ```
 
-The default sessions directory is `~/.openclaw/agents/main-cloud/sessions`.
+Default sessions directory:
+
+`~/.openclaw/agents/main-cloud/sessions`
+
+## Configuration
+
+- `EAVESDROP_SESSIONS_DIR`: default sessions path if `--dir` is not passed
+- `.env` at repo root is loaded by the CLI entrypoint (simple `KEY=VALUE` lines only)
+
+Example:
+
+```bash
+EAVESDROP_SESSIONS_DIR=/home/you/.openclaw/agents/main-cloud/sessions
+```
 
 ## Keybindings
 
@@ -58,26 +101,51 @@ The default sessions directory is `~/.openclaw/agents/main-cloud/sessions`.
 | `T` | Collapse / expand all turns |
 | `e` | Toggle all tool blocks expanded/collapsed |
 | `$` | Toggle token/cost footers |
-| `r` | Reload current file |
-| `q` | Quit |
+| `r` | Reload session + refresh browser |
+| `f` | Toggle follow mode for active sessions |
 | `/` | Open search bar |
 | `n` / `N` | Next / previous search match |
 | `Escape` | Close search bar |
 | `]` / `[` | Scroll to next / previous turn |
 | `y` | Copy tool call command to clipboard |
+| `q` | Quit |
 
-## Session format
+## Session File Support
 
-Eavesdrop reads JSONL files where each line is a typed event (`session`, `model_change`, `message`). This format is specific to openclaw. Active sessions use a `.jsonl` extension; closed sessions are `.jsonl.reset.<timestamp>`; deleted sessions (`.jsonl.deleted.<timestamp>`) are excluded from the browser.
+Supported patterns:
+- Active: `*.jsonl`
+- Closed: `*.jsonl.reset.<timestamp>`
+- Ignored: `*.jsonl.deleted.<timestamp>`
+
+Each JSONL line is a typed event (`session`, `model_change`, `message`).
+
+## Publishing / Deployment
+
+For maintainers publishing package artifacts:
+
+```bash
+# Build sdist + wheel
+uv build
+
+# Optional sanity check
+python3 -m zipfile -l dist/*.whl
+```
+
+If publishing to PyPI:
+
+```bash
+# one-time
+python3 -m pip install --upgrade twine
+
+# verify metadata and long description
+python3 -m twine check dist/*
+
+# publish
+python3 -m twine upload dist/*
+```
+
+If publishing only to GitHub Releases, upload files from `dist/`.
 
 ## License
 
-MIT License
-
-Copyright (c) 2026 ramnat
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+MIT. See [LICENSE](LICENSE).

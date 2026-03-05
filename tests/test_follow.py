@@ -106,6 +106,28 @@ class TestAppendNewLines:
             await pilot.pause()
             assert len(list(conv.query(ToolResultBlock))) == initial_count + 1
 
+    @pytest.mark.asyncio
+    async def test_append_new_user_creates_new_turn_separator(self, tmp_path):
+        p = tmp_path / "s.jsonl"
+        _minimal_session(p)
+        app = EavesdropApp(sessions_dir=tmp_path, initial_session=p)
+        async with app.run_test(size=(80, 40)) as pilot:
+            conv = app.query_one("#conversation", ConversationView)
+            from eavesdrop.widgets.turn import TurnSeparator
+            initial_count = len(list(conv.query(TurnSeparator)))
+
+            with open(p, "a") as f:
+                new_msg = {
+                    "type": "message", "id": "u2", "parentId": "a1",
+                    "timestamp": "2026-03-01T12:00:10.000Z",
+                    "message": {"role": "user", "content": [{"type": "text", "text": "next turn"}], "timestamp": 2},
+                }
+                f.write(json.dumps(new_msg) + "\n")
+
+            conv.append_new_lines(p)
+            await pilot.pause()
+            assert len(list(conv.query(TurnSeparator))) == initial_count + 1
+
 
 # ---------------------------------------------------------------------------
 # Follow mode toggle tests

@@ -213,13 +213,16 @@ def scan_sessions(sessions_dir: Path) -> list[Path]:
     Excludes deleted sessions (uuid.jsonl.deleted.TIMESTAMP) and non-JSONL files.
     """
     files = []
-    for p in sessions_dir.iterdir():
-        name = p.name
-        if ".jsonl" not in name:
-            continue
-        if ".deleted." in name:
-            continue
-        files.append(p)
+    try:
+        for p in sessions_dir.iterdir():
+            name = p.name
+            if ".jsonl" not in name:
+                continue
+            if ".deleted." in name:
+                continue
+            files.append(p)
+    except (FileNotFoundError, NotADirectoryError, PermissionError, OSError):
+        return []
     files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return files
 

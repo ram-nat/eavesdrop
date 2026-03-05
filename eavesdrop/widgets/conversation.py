@@ -310,7 +310,34 @@ class ConversationView(VerticalScroll):
 
         near_bottom = self._is_near_bottom()
         for event in new_events:
-            self._mount_event(event)
+            if isinstance(event, Message) and event.role == "user":
+                # Start a new turn so turn-level collapse/expand keeps working.
+                sep = TurnSeparator(
+                    len(self._turn_separators) + 1,
+                    event.timestamp,
+                    0,
+                    0.0,
+                    False,
+                    False,
+                )
+                sep.expanded = self._turns_expanded
+                self._turn_separators.append(sep)
+                self.mount(sep)
+
+                turn_widgets = self._mount_event(event)
+                for w in turn_widgets:
+                    w.display = sep.expanded
+                self._turn_groups.append((sep, turn_widgets))
+            elif self._turn_groups:
+                # Append to the current turn, preserving its collapsed state.
+                sep, widgets = self._turn_groups[-1]
+                mounted = self._mount_event(event)
+                for w in mounted:
+                    w.display = sep.expanded
+                widgets.extend(mounted)
+            else:
+                # Prologue events (before first user turn) remain always visible.
+                self._mount_event(event)
         if near_bottom:
             self.scroll_end(animate=False)
 
