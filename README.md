@@ -1,0 +1,73 @@
+# eavesdrop
+
+Terminal UI for browsing [openclaw](https://github.com) session files. Two-panel layout: session list on the left, conversation thread on the right.
+
+Built with [Textual](https://github.com/Textualize/textual).
+
+<!-- screenshot -->
+
+## Requirements
+
+- Python 3.12+
+- Sessions produced by openclaw (JSONL files)
+- `wl-clipboard` (optional, for clipboard on Wayland): `sudo apt install wl-clipboard`
+
+## Install
+
+```bash
+git clone https://github.com/your-username/eavesdrop
+cd eavesdrop
+uv venv venv
+uv pip install -e .
+```
+
+## Usage
+
+```bash
+# Browse the default sessions directory
+eavesdrop
+
+# Browse a custom directory
+eavesdrop --dir /path/to/sessions
+
+# Open a specific session file directly
+eavesdrop --session /path/to/session.jsonl
+```
+
+The default sessions directory is `/home/openclaw/.openclaw/agents/main-cloud/sessions`.
+
+## Keybindings
+
+| Key | Action |
+|---|---|
+| `j` / `k`, arrows | Navigate session list |
+| `Enter` | Load session / toggle focused block |
+| `Space` | Toggle focused collapsible block |
+| `Tab` | Move focus between collapsible blocks |
+| `t` | Toggle thinking blocks |
+| `T` | Collapse / expand all turns |
+| `e` | Toggle all tool blocks expanded/collapsed |
+| `$` | Toggle token/cost footers |
+| `r` | Reload current file |
+| `q` | Quit |
+| `/` | Open search bar |
+| `n` / `N` | Next / previous search match |
+| `Escape` | Close search bar |
+| `]` / `[` | Scroll to next / previous turn |
+| `y` | Copy tool call command to clipboard |
+
+## Session format
+
+Eavesdrop reads JSONL files where each line is a typed event (`session`, `model_change`, `message`). This format is specific to openclaw. Active sessions use a `.jsonl` extension; closed sessions are `.jsonl.reset.<timestamp>`; deleted sessions (`.jsonl.deleted.<timestamp>`) are excluded from the browser.
+
+## License
+
+MIT License
+
+Copyright (c) 2026
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
