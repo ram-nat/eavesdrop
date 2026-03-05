@@ -121,6 +121,8 @@ class ConversationView(VerticalScroll):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._session: ParsedSession | None = None
+        self._current_path: Path | None = None
+        self._file_byte_offset: int = 0
         self._assistant_turns: list[AssistantTurn] = []
         self._tool_result_blocks: list[ToolResultBlock] = []
         self._show_thinking = False
@@ -140,10 +142,15 @@ class ConversationView(VerticalScroll):
             yield Label("", id="search-counter")
 
     def load_session(self, path: Path) -> None:
+        self._current_path = path
         self._session = parse_file(path)
         self._assistant_turns = []
         self._tool_result_blocks = []
         self._rebuild()
+        try:
+            self._file_byte_offset = path.stat().st_size
+        except OSError:
+            self._file_byte_offset = 0
 
     def _mount_event(self, event) -> list:
         """Mount a single event widget and return the list of mounted widgets."""
@@ -229,6 +236,78 @@ class ConversationView(VerticalScroll):
 
     def reload(self, path: Path) -> None:
         self.load_session(path)
+
+    def append_new_lines(self, path: Path) -> None:
+        """Parse only lines added since last load and mount new widgets."""
+        try:
+            size = path.stat().st_size
+        except OSError:
+            return
+        if size <= self._file_byte_offset:
+            return
+
+        new_events = []
+        try:
+            with open(path, encoding="utf-8") as f:
+                f.seek(self._file_byte_offset)
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    from eavesdrop.parser import _parse_content, _parse_usage
+                    t = obj.get("type")
+                    if t == "message":
+                        msg = obj.get("message", {})
+                        role = msg.get("role", "")
+                        if role in ("user", "assistant"):
+                            content = _parse_content(msg.get("content", []))
+                            usage = _parse_usage(msg.get("usage")) if role == "assistant" else None
+                            new_events.append(Message(
+                                id=obj.get("id", ""),
+                                parent_id=obj.get("parentId"),
+                                timestamp=obj.get("timestamp", ""),
+                                role=role,
+                                content=content,
+                                model=msg.get("model", ""),
+                                provider=msg.get("provider", ""),
+                                usage=usage,
+                                stop_reason=msg.get("stopReason", ""),
+                            ))
+                        elif role == "toolResult":
+                            content = _parse_content(msg.get("content", []))
+                            new_events.append(Message(
+                                id=obj.get("id", ""),
+                                parent_id=obj.get("parentId"),
+                                timestamp=obj.get("timestamp", ""),
+                                role="toolResult",
+                                content=content,
+                                tool_call_id=msg.get("toolCallId", ""),
+                                tool_name=msg.get("toolName", ""),
+                                is_error=msg.get("isError", False),
+                                details=msg.get("details", {}),
+                            ))
+            self._file_byte_offset = size
+        except OSError:
+            return
+
+        if not new_events:
+            return
+
+        near_bottom = self._is_near_bottom()
+        for event in new_events:
+            self._mount_event(event)
+        if near_bottom:
+            self.scroll_end(animate=False)
+
+    def _is_near_bottom(self) -> bool:
+        """Return True if scroll position is within ~3 lines of bottom."""
+        if self.max_scroll_y <= 0:
+            return True
+        return (self.max_scroll_y - self.scroll_y) <= 3
 
     def toggle_thinking(self) -> bool:
         self._show_thinking = not self._show_thinking
