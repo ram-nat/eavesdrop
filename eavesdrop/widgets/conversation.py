@@ -19,6 +19,7 @@ from eavesdrop.widgets.turn import (
     ToolResultBlock,
     TurnSeparator,
     UserTurn,
+    _is_final,
 )
 
 
@@ -80,6 +81,16 @@ def _block_text(block) -> str:
         return block._message.tool_name + " " + block._get_text()
     elif isinstance(block, FinalBlock):
         return block._text
+    elif isinstance(block, UserTurn):
+        parts = [c.text for c in block._message.content if c.type == "text" and c.text]
+        return "\n".join(parts)
+    elif isinstance(block, AssistantTurn):
+        # Plain (non-final) text blocks in assistant turns
+        parts = []
+        for cb in block._message.content:
+            if cb.type == "text" and cb.text.strip() and not _is_final(cb.text):
+                parts.append(cb.text)
+        return "\n".join(parts)
     return ""
 
 
@@ -340,8 +351,20 @@ class ConversationView(VerticalScroll):
     def _collect_searchable_blocks(self) -> list:
         return [
             w for w in self.query("*")
-            if isinstance(w, (ToolCallBlock, ToolResultBlock, FinalBlock))
+            if isinstance(w, (ToolCallBlock, ToolResultBlock, FinalBlock, UserTurn, AssistantTurn))
+            and _block_text(w).strip()
         ]
+
+    def _turn_separator_for(self, block) -> TurnSeparator | None:
+        """Return the TurnSeparator whose turn group contains block, or None."""
+        # Walk block's ancestor chain to find a direct turn-group member
+        node = block
+        while node is not None and node is not self:
+            for sep, widgets in self._turn_groups:
+                if any(w is node for w in widgets):
+                    return sep
+            node = node.parent
+        return None
 
     def _update_counter_label(self) -> None:
         label = self.query_one("#search-counter", Label)
@@ -352,8 +375,16 @@ class ConversationView(VerticalScroll):
 
     def _jump_to(self, index: int) -> None:
         block = self._search_matches[index]
-        block.expanded = True
-        block.focus()
+        # Expand the containing turn if collapsed
+        sep = self._turn_separator_for(block)
+        if sep is not None and not sep.expanded:
+            sep.expanded = True
+            self.on_turn_separator_toggle(TurnSeparator.Toggle(sep))
+        # Expand the block if it's a collapsible widget
+        if hasattr(block, "expanded"):
+            block.expanded = True
+        if block.can_focus:
+            block.focus()
         block.scroll_visible(animate=False)
 
     def _run_search(self, query: str) -> None:

@@ -9,7 +9,7 @@ import pytest
 
 from eavesdrop.app import EavesdropApp
 from eavesdrop.widgets.conversation import ConversationView, _block_text
-from eavesdrop.widgets.turn import FinalBlock, ToolCallBlock, ToolResultBlock
+from eavesdrop.widgets.turn import AssistantTurn, FinalBlock, ToolCallBlock, ToolResultBlock, UserTurn
 from eavesdrop.parser import ContentBlock, Message
 
 
@@ -21,6 +21,32 @@ def _write_jsonl(path: Path, lines: list[dict]) -> None:
     with open(path, "w") as f:
         for obj in lines:
             f.write(json.dumps(obj) + "\n")
+
+
+def _write_plain_text_session(path: Path) -> None:
+    """Session with user text and plain (non-final) assistant text."""
+    _write_jsonl(path, [
+        {"type": "session", "id": "s2", "timestamp": "2026-03-01T12:00:00.000Z", "cwd": "/tmp"},
+        {
+            "type": "message", "id": "u1", "parentId": None,
+            "timestamp": "2026-03-01T12:00:02.000Z",
+            "message": {"role": "user", "content": [
+                {"type": "text", "text": "uniqueuserquery"}
+            ], "timestamp": 1},
+        },
+        {
+            "type": "message", "id": "a1", "parentId": "u1",
+            "timestamp": "2026-03-01T12:00:03.000Z",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "uniqueassistantreply"}],
+                "model": "test-model", "provider": "test",
+                "usage": {"input": 10, "output": 5, "cacheRead": 0, "cacheWrite": 0,
+                          "totalTokens": 15, "cost": {"total": 0}},
+                "stopReason": "end_turn", "timestamp": 1,
+            },
+        },
+    ])
 
 
 def _write_search_session(path: Path) -> None:
@@ -117,6 +143,34 @@ class TestBlockText:
         from textual.widget import Widget
         w = Widget()
         assert _block_text(w) == ""
+
+    def test_user_turn_text(self):
+        msg = Message(
+            id="u1", parent_id=None, timestamp="t", role="user",
+            content=[ContentBlock(type="text", text="please list files")],
+        )
+        block = UserTurn(msg)
+        text = _block_text(block)
+        assert "please list files" in text
+
+    def test_assistant_turn_plain_text(self):
+        msg = Message(
+            id="a1", parent_id=None, timestamp="t", role="assistant",
+            content=[ContentBlock(type="text", text="plain response here")],
+        )
+        block = AssistantTurn(msg)
+        text = _block_text(block)
+        assert "plain response here" in text
+
+    def test_assistant_turn_excludes_final_blocks(self):
+        msg = Message(
+            id="a1", parent_id=None, timestamp="t", role="assistant",
+            content=[ContentBlock(type="text", text="<final>final answer</final>")],
+        )
+        block = AssistantTurn(msg)
+        text = _block_text(block)
+        # <final> text should not appear in AssistantTurn's corpus (it has its own FinalBlock)
+        assert text.strip() == ""
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +399,44 @@ class TestSearchNavigation:
 # ---------------------------------------------------------------------------
 # Integration tests: reload
 # ---------------------------------------------------------------------------
+
+class TestSearchCorpusExtension:
+    @pytest.mark.asyncio
+    async def test_search_finds_user_text(self, tmp_path):
+        p = tmp_path / "s.jsonl"
+        _write_plain_text_session(p)
+        app = EavesdropApp(sessions_dir=tmp_path, initial_session=p)
+        async with app.run_test(size=(120, 40)) as pilot:
+            conv = app.query_one("#conversation", ConversationView)
+            conv._run_search("uniqueuserquery")
+            assert len(conv._search_matches) == 1
+            assert isinstance(conv._search_matches[0], UserTurn)
+
+    @pytest.mark.asyncio
+    async def test_search_finds_plain_assistant_text(self, tmp_path):
+        p = tmp_path / "s.jsonl"
+        _write_plain_text_session(p)
+        app = EavesdropApp(sessions_dir=tmp_path, initial_session=p)
+        async with app.run_test(size=(120, 40)) as pilot:
+            conv = app.query_one("#conversation", ConversationView)
+            conv._run_search("uniqueassistantreply")
+            assert len(conv._search_matches) == 1
+            assert isinstance(conv._search_matches[0], AssistantTurn)
+
+    @pytest.mark.asyncio
+    async def test_search_in_collapsed_turn_expands_it(self, tmp_path):
+        p = tmp_path / "s.jsonl"
+        _write_search_session(p)
+        app = EavesdropApp(sessions_dir=tmp_path, initial_session=p)
+        async with app.run_test(size=(120, 40)) as pilot:
+            conv = app.query_one("#conversation", ConversationView)
+            # Turns start collapsed — verify
+            assert all(not sep.expanded for sep in conv._turn_separators)
+            conv._run_search("ls -la")
+            await pilot.pause()
+            # The turn containing the match should now be expanded
+            assert any(sep.expanded for sep in conv._turn_separators)
+
 
 class TestSearchReload:
     @pytest.mark.asyncio
