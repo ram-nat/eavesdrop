@@ -540,7 +540,7 @@ class TurnSeparator(Widget):
             label = f"── {meta}{indicator} "
             # Fill remaining space with dashes via Rich
             t = Text(label)
-            t.append("─" * max(0, 80 - len(label)))
+            t.append("─" * max(0, self.size.width - len(label)))
         else:
             t = Text(f"▸ {meta}{indicator}")
 

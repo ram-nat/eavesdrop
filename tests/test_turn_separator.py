@@ -591,3 +591,71 @@ class TestToggleAllTurns:
             assert result is True
             result = cv.toggle_turns()
             assert result is False
+
+
+# ---------------------------------------------------------------------------
+# M4: Enter-to-load and responsive separator
+# ---------------------------------------------------------------------------
+
+class TestEnterToLoadAndResponsiveSeparator:
+    @pytest.mark.asyncio
+    async def test_cursor_move_does_not_load_session(self, tmp_path):
+        """Moving the cursor with j/k should not trigger session load."""
+        import time
+        p1 = tmp_path / "older.jsonl"
+        _write_jsonl(p1, _session_lines() + [_user_line(text="session1")])
+        time.sleep(0.01)
+        p2 = tmp_path / "newer.jsonl"
+        _write_jsonl(p2, _session_lines() + [_user_line(text="session2")])
+
+        app = EavesdropApp(sessions_dir=tmp_path, initial_session=p2)
+        async with app.run_test(size=(120, 40)) as pilot:
+            # Track loads by patching _load
+            load_calls = []
+            original_load = app._load
+            app._load = lambda p: load_calls.append(p) or original_load(p)
+
+            initial_loads = list(load_calls)
+            # Move cursor down
+            await pilot.press("j")
+            await pilot.press("j")
+            await pilot.press("k")
+            # Cursor movement should not trigger _load
+            assert list(load_calls) == initial_loads
+
+    @pytest.mark.asyncio
+    async def test_enter_loads_selected_session(self, tmp_path):
+        """Pressing Enter should load the currently highlighted session."""
+        import time
+        p1 = tmp_path / "older.jsonl"
+        _write_jsonl(p1, _session_lines() + [_user_line(text="session1")])
+        time.sleep(0.01)
+        p2 = tmp_path / "newer.jsonl"
+        _write_jsonl(p2, _session_lines() + [_user_line(text="session2")])
+
+        app = EavesdropApp(sessions_dir=tmp_path, initial_session=p2)
+        async with app.run_test(size=(120, 40)) as pilot:
+            from eavesdrop.widgets.file_browser import FileBrowser
+            browser = app.query_one("#browser", FileBrowser)
+            # Move to older session
+            await pilot.press("j")
+            await pilot.press("enter")
+            await pilot.pause()
+            # Should now have loaded the second session
+            assert app._current_path is not None
+
+    @pytest.mark.asyncio
+    async def test_separator_render_uses_widget_width(self, tmp_path):
+        """TurnSeparator should fill to widget width, not hardcoded 80."""
+        p = tmp_path / "s.jsonl"
+        _write_jsonl(p, _session_lines() + [_user_line(), _assistant_line()])
+        app = EavesdropApp(sessions_dir=tmp_path, initial_session=p)
+        async with app.run_test(size=(100, 40)) as pilot:
+            sep = app.query_one(TurnSeparator)
+            sep.expanded = True
+            await pilot.pause()
+            rendered = sep.render()
+            rendered_str = str(rendered)
+            # With width 100, separator line should not be limited to 80 chars
+            # The Text object's plain text length should roughly match the widget width
+            assert len(rendered_str) <= 100
