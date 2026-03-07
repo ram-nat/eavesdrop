@@ -10,6 +10,14 @@ You get a fast two-pane workflow:
 
 Built with [Textual](https://github.com/Textualize/textual).
 
+## Why?
+- I've set up Openclaw where the cloud LLM (which is much more capable), provides prompts + directions to the local model hosted on my puny 12 GB VRAM 3060. 
+- Even though the cloud LLM is capable, sometimes it struggles a bit to find the right tools or the right way to use the tool.
+- When I write skills, I may not be clear enough or there can be mistakes that cause the LLM to struggle.
+- Finally, the tools themselves may have bugs, the environment setup may have issues.
+
+Having this turn based viewer helps me understand and debug such potential issues.
+
 ## Highlights
 
 - Turn separators with error/corrected indicators
