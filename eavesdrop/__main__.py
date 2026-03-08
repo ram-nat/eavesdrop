@@ -30,7 +30,7 @@ def _load_dotenv() -> None:
 
 _load_dotenv()
 
-from eavesdrop.app import EavesdropApp, DEFAULT_SESSIONS_DIR
+from eavesdrop.app import EavesdropApp, DEFAULT_SESSIONS_DIR, DEFAULT_OPENCLAW_DIR
 
 
 def main():
@@ -51,11 +51,25 @@ def main():
         default=DEFAULT_SESSIONS_DIR,
         help=f"Sessions directory (default: {DEFAULT_SESSIONS_DIR})",
     )
+    parser.add_argument(
+        "--cron",
+        metavar="PATH",
+        type=Path,
+        nargs="?",
+        const=DEFAULT_OPENCLAW_DIR,
+        default=None,
+        help=(
+            "Launch in cron mode. Optionally specify the openclaw root dir "
+            f"(default: {DEFAULT_OPENCLAW_DIR})"
+        ),
+    )
     args = parser.parse_args()
 
     app = EavesdropApp(
         sessions_dir=args.dir,
         initial_session=args.session,
+        openclaw_dir=args.cron if args.cron is not None else DEFAULT_OPENCLAW_DIR,
+        start_cron=args.cron is not None,
     )
     app.run()
 

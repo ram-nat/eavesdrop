@@ -11,8 +11,11 @@ from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Input, Label
 
 from eavesdrop.parser import parse_file, Message, ModelChange, ParsedSession, tool_result_has_error
+from eavesdrop.cron_parser import CronRunContext, load_debug_log
 from eavesdrop.widgets.turn import (
     AssistantTurn,
+    CronRunHeader,
+    DebugLogSection,
     FinalBlock,
     ModelChangeTurn,
     ToolCallBlock,
@@ -102,6 +105,7 @@ class ConversationView(VerticalScroll):
         Binding("escape", "close_search", "Close search", show=False),
         Binding("[", "prev_turn", "Prev turn", show=False),
         Binding("]", "next_turn", "Next turn", show=False),
+        Binding("d", "toggle_debug_log", "Debug log", show=False),
     ]
 
     DEFAULT_CSS = """
@@ -145,6 +149,8 @@ class ConversationView(VerticalScroll):
         self._turn_separators: list[TurnSeparator] = []
         self._turn_groups: list[tuple[TurnSeparator, list[Widget]]] = []
         self._turns_expanded = False
+        self._cron_context: CronRunContext | None = None
+        self._debug_section: DebugLogSection | None = None
 
     def compose(self) -> ComposeResult:
         yield Label("No session loaded.", classes="empty-label")
@@ -152,11 +158,17 @@ class ConversationView(VerticalScroll):
             yield Input(placeholder="Search…", id="search-input")
             yield Label("", id="search-counter")
 
-    def load_session(self, path: Path) -> None:
+    def load_session(
+        self,
+        path: Path,
+        cron_context: CronRunContext | None = None,
+    ) -> None:
         self._current_path = path
         self._session = parse_file(path)
+        self._cron_context = cron_context
         self._assistant_turns = []
         self._tool_result_blocks = []
+        self._debug_section = None
         self._rebuild()
         try:
             self._file_byte_offset = path.stat().st_size
@@ -201,6 +213,7 @@ class ConversationView(VerticalScroll):
         self._search_index = 0
         self._turn_separators = []
         self._turn_groups = []
+        self._debug_section = None
         try:
             self._update_counter_label()
         except Exception:
@@ -213,6 +226,17 @@ class ConversationView(VerticalScroll):
         if self._session.error:
             self.mount(Label(f"Permission denied: {self._session.error}", classes="empty-label"))
             return
+
+        if self._cron_context is not None:
+            ctx = self._cron_context
+            self.mount(CronRunHeader(ctx.job, ctx.run))
+            entries: list[dict] = []
+            if ctx.debug_log_path is not None:
+                entries = load_debug_log(ctx.debug_log_path, ctx.job.id, ctx.run.ts)
+            dbg = DebugLogSection(entries)
+            self._debug_section = dbg
+            self.mount(dbg)
+            self.mount(Label("── Session content ──────────────────────────", classes="empty-label"))
 
         prologue, turns = _group_turns(self._session.events)
 
@@ -246,7 +270,11 @@ class ConversationView(VerticalScroll):
         self.scroll_home(animate=False)
 
     def reload(self, path: Path) -> None:
-        self.load_session(path)
+        self.load_session(path, cron_context=self._cron_context)
+
+    def action_toggle_debug_log(self) -> None:
+        if self._debug_section is not None:
+            self._debug_section.toggle()
 
     def append_new_lines(self, path: Path) -> None:
         """Parse only lines added since last load and mount new widgets."""

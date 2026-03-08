@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from rich.syntax import Syntax
@@ -19,6 +19,7 @@ from textual.reactive import reactive
 from textual.containers import Vertical
 
 from eavesdrop.parser import Message, ModelChange, Usage, tool_result_has_error
+from eavesdrop.cron_parser import CronJob, CronRun, fmt_ms, fmt_duration
 
 if TYPE_CHECKING:
     pass
@@ -549,3 +550,142 @@ class TurnSeparator(Widget):
     def action_toggle(self) -> None:
         self.expanded = not self.expanded
         self.post_message(TurnSeparator.Toggle(self))
+
+
+class CronRunHeader(Widget):
+    """Non-scrolling header shown above session content when loaded via cron."""
+
+    DEFAULT_CSS = """
+    CronRunHeader {
+        height: auto;
+        padding: 1;
+        background: $panel;
+    }
+    CronRunHeader .cron-run-title {
+        color: $accent;
+        text-style: bold;
+    }
+    CronRunHeader .cron-run-meta {
+        color: $text-muted;
+    }
+    CronRunHeader .cron-run-hint {
+        color: $text-disabled;
+    }
+    """
+
+    def __init__(self, job: CronJob, run: CronRun, **kwargs):
+        super().__init__(**kwargs)
+        self._job = job
+        self._run = run
+
+    def compose(self) -> ComposeResult:
+        j = self._job
+        r = self._run
+        status = f"[{r.status}]" if r.status else ""
+        duration = fmt_duration(r.duration_ms)
+        ts_str = fmt_ms(r.ts)
+        yield Label(f"Cron Run: {j.name}  {status}  {duration}", classes="cron-run-title")
+        delivery = f"  delivery: {r.delivery_status}" if r.delivery_status else ""
+        tokens = r.usage.get("totalTokens", 0) if r.usage else 0
+        usage_str = f"  tokens: {tokens:,}" if tokens else ""
+        yield Label(f"Ran: {ts_str}{delivery}{usage_str}", classes="cron-run-meta")
+        yield Label("── d: toggle debug log ──────────────────────", classes="cron-run-hint")
+
+
+class DebugLogSection(Widget):
+    """Collapsible debug log section shown below CronRunHeader."""
+
+    can_focus = True
+    expanded: reactive[bool] = reactive(False)
+
+    BINDINGS = [
+        Binding("enter", "toggle", "Toggle", show=False),
+        Binding("space", "toggle", "Toggle", show=False),
+    ]
+
+    DEFAULT_CSS = """
+    DebugLogSection {
+        height: auto;
+        padding: 0 0 0 1;
+    }
+    DebugLogSection:focus {
+        background: $boost;
+    }
+    DebugLogSection .debug-label {
+        color: $text-muted;
+        text-style: bold;
+    }
+    DebugLogSection .debug-body {
+        color: $text-disabled;
+        padding: 0 0 0 2;
+    }
+    """
+
+    def __init__(self, entries: list[dict], **kwargs):
+        super().__init__(**kwargs)
+        self._entries = entries
+
+    def _format_entries(self) -> str:
+        if not self._entries:
+            return "(no debug entries)"
+        lines = []
+        for entry in self._entries:
+            meta = entry.get("_meta", {}) or {}
+            raw_ts = meta.get("ts", entry.get("ts", ""))
+            level = meta.get("level", "")
+            module = meta.get("module", "")
+            msg = str(entry.get("msg", ""))
+
+            if isinstance(raw_ts, (int, float)):
+                try:
+                    dt = datetime.fromtimestamp(raw_ts / 1000, tz=timezone.utc).astimezone()
+                    ts_str = dt.strftime("%H:%M:%S.") + f"{dt.microsecond // 1000:03d}"
+                except Exception:
+                    ts_str = str(int(raw_ts))
+            elif isinstance(raw_ts, str) and len(raw_ts) > 11:
+                ts_str = raw_ts[11:23]
+            else:
+                ts_str = str(raw_ts)
+
+            prefix = f"[{ts_str}]"
+            if level:
+                prefix += f"  [{level}]"
+            if module:
+                prefix += f"  [{module}]"
+            lines.append(f"{prefix}  {msg}")
+        return "\n".join(lines)
+
+    def compose(self) -> ComposeResult:
+        count = len(self._entries)
+        yield Label(
+            f"▶ Debug log ({count} entries)",
+            classes="debug-label",
+            id="debug-preview",
+        )
+        body = Static(
+            self._format_entries(),
+            classes="debug-body",
+            id="debug-body",
+            markup=False,
+        )
+        body.display = False
+        yield body
+
+    def watch_expanded(self, value: bool) -> None:
+        try:
+            preview = self.query_one("#debug-preview", Label)
+            body = self.query_one("#debug-body", Static)
+            count = len(self._entries)
+            if value:
+                preview.update(f"▼ Debug log ({count} entries)")
+            else:
+                preview.update(f"▶ Debug log ({count} entries)")
+            body.display = value
+        except Exception:
+            pass
+
+    def action_toggle(self) -> None:
+        self.expanded = not self.expanded
+
+    def toggle(self) -> None:
+        self.expanded = not self.expanded

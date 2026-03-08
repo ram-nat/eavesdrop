@@ -8,16 +8,25 @@ from pathlib import Path
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
-from textual.widgets import Footer, Header
+from textual.widgets import Footer, Header, Label
 
+from eavesdrop.cron_parser import CronRunContext, load_debug_log
 from eavesdrop.parser import scan_sessions, session_uuid
 from eavesdrop.widgets.conversation import ConversationView
+from eavesdrop.widgets.cron_browser import CronBrowser
 from eavesdrop.widgets.file_browser import FileBrowser
 
 DEFAULT_SESSIONS_DIR = Path(
     os.environ.get(
         "EAVESDROP_SESSIONS_DIR",
         Path.home() / ".openclaw" / "agents" / "main-cloud" / "sessions",
+    )
+)
+
+DEFAULT_OPENCLAW_DIR = Path(
+    os.environ.get(
+        "EAVESDROP_OPENCLAW_DIR",
+        Path.home() / ".openclaw",
     )
 )
 
@@ -30,6 +39,10 @@ class EavesdropApp(App):
         layout: horizontal;
     }
     FileBrowser {
+        width: 28;
+        height: 100%;
+    }
+    CronBrowser {
         width: 28;
         height: 100%;
     }
@@ -47,6 +60,7 @@ class EavesdropApp(App):
         Binding("dollar_sign", "toggle_usage", "Costs", key_display="$"),
         Binding("r", "reload", "Reload"),
         Binding("f", "toggle_follow", "Follow"),
+        Binding("C", "toggle_cron", "Cron", key_display="C"),
         Binding("enter", "load_selected", "Load", show=False),
         Binding("j", "cursor_down", "Down", show=False),
         Binding("k", "cursor_up", "Up", show=False),
@@ -56,40 +70,57 @@ class EavesdropApp(App):
         self,
         sessions_dir: Path = DEFAULT_SESSIONS_DIR,
         initial_session: Path | None = None,
+        openclaw_dir: Path = DEFAULT_OPENCLAW_DIR,
+        start_cron: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self._sessions_dir = sessions_dir
         self._initial_session = initial_session
+        self._openclaw_dir = openclaw_dir
+        self._start_cron = start_cron
         self._current_path: Path | None = None
         self._follow_mode: bool = False
         self._follow_mtime: float = 0.0
         self._follow_inode: int = 0
         self._follow_timer = None
+        self._cron_mode: bool = start_cron
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         with Horizontal():
             yield FileBrowser(self._sessions_dir, id="browser")
+            cron_dir = self._openclaw_dir / "cron"
+            yield CronBrowser(cron_dir, self._sessions_dir, id="cron-browser")
             yield ConversationView(id="conversation")
         yield Footer()
 
     def on_mount(self) -> None:
+        # Apply initial panel visibility
+        browser = self.query_one("#browser", FileBrowser)
+        cron = self.query_one("#cron-browser", CronBrowser)
+        if self._cron_mode:
+            browser.display = False
+        else:
+            cron.display = False
+
         if self._initial_session:
             self._load(self._initial_session)
-        else:
+        elif not self._cron_mode:
             paths = scan_sessions(self._sessions_dir)
             if paths:
                 self._load(paths[0])
 
-    def _load(self, path: Path) -> None:
+    def _load(self, path: Path, cron_context: CronRunContext | None = None) -> None:
         self._current_path = path
         conv = self.query_one("#conversation", ConversationView)
-        conv.load_session(path)
+        conv.load_session(path, cron_context=cron_context)
         short = session_uuid(path)[:8]
         self.sub_title = short
 
     def action_load_selected(self) -> None:
+        if self._cron_mode:
+            return
         browser = self.query_one("#browser", FileBrowser)
         path = browser.selected_path
         if path:
@@ -112,27 +143,69 @@ class EavesdropApp(App):
         conv.toggle_usage()
 
     def action_reload(self) -> None:
+        if self._cron_mode:
+            self.query_one("#cron-browser", CronBrowser).refresh_jobs()
+            return
         browser = self.query_one("#browser", FileBrowser)
         current_path = self._current_path
         browser.load_sessions()
         if current_path:
-            # Restore selection to the previously loaded session
             browser.select_path(current_path)
             conv = self.query_one("#conversation", ConversationView)
             conv.reload(current_path)
 
     def action_cursor_down(self) -> None:
-        browser = self.query_one("#browser", FileBrowser)
-        browser.action_cursor_down()
+        if self._cron_mode:
+            self.query_one("#cron-browser", CronBrowser).action_cursor_down()
+        else:
+            self.query_one("#browser", FileBrowser).action_cursor_down()
 
     def action_cursor_up(self) -> None:
+        if self._cron_mode:
+            self.query_one("#cron-browser", CronBrowser).action_cursor_up()
+        else:
+            self.query_one("#browser", FileBrowser).action_cursor_up()
+
+    def action_toggle_cron(self) -> None:
+        self._cron_mode = not self._cron_mode
         browser = self.query_one("#browser", FileBrowser)
-        browser.action_cursor_up()
+        cron = self.query_one("#cron-browser", CronBrowser)
+        if self._cron_mode:
+            browser.display = False
+            cron.display = True
+        else:
+            cron.display = False
+            browser.display = True
 
     def on_list_view_selected(self, event) -> None:
         from eavesdrop.widgets.file_browser import SessionItem
         if isinstance(event.item, SessionItem):
             self._load(event.item.session_path)
+
+    def on_cron_browser_session_requested(self, event: CronBrowser.SessionRequested) -> None:
+        debug_log_path = self._openclaw_dir / "logs" / "openclaw-debug.log"
+        if not debug_log_path.exists():
+            debug_log_path = None
+        ctx = CronRunContext(
+            job=event.job,
+            run=event.run,
+            debug_log_path=debug_log_path,
+        )
+        self._load(event.path, cron_context=ctx)
+
+    def on_cron_browser_no_session(self, event: CronBrowser.NoSession) -> None:
+        conv = self.query_one("#conversation", ConversationView)
+        conv._session = None
+        conv._cron_context = None
+        # Show an informative message in place of session content
+        from textual.widgets import Label as TLabel
+        for child in list(conv.children):
+            if child.id != "search-bar-row":
+                child.remove()
+        conv.mount(TLabel(
+            f"No session for '{event.job_name}': {event.reason}",
+            classes="empty-label",
+        ))
 
     def action_toggle_follow(self) -> None:
         self._follow_mode = not self._follow_mode
