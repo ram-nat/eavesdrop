@@ -374,7 +374,7 @@ class TestCronBrowserSessionLoad:
             assert app._current_path == path
 
     @pytest.mark.asyncio
-    async def test_no_session_shows_message(self, tmp_path):
+    async def test_no_session_id_shows_cron_header(self, tmp_path):
         job_id = "job-uuid-1"
         cron_dir = tmp_path / "cron"
         runs_dir = cron_dir / "runs"
@@ -395,30 +395,28 @@ class TestCronBrowserSessionLoad:
             await pilot.pause()
             cron = app.query_one("#cron-browser", CronBrowser)
             job = cron._jobs[0]
-
-            cron.post_message(CronBrowser.NoSession(
-                job_name=job.name,
-                reason="No isolated session",
-            ))
+            from eavesdrop.cron_parser import load_runs, CronRunContext
+            runs = load_runs(cron_dir, job_id)
+            assert len(runs) == 1
+            # SessionRequested with path=None — should show cron header, not crash
+            cron.post_message(CronBrowser.SessionRequested(path=None, run=runs[0], job=job))
             await pilot.pause()
-            # Should not crash and conversation should show message
+            # Should not crash; header should be visible
             from eavesdrop.widgets.conversation import ConversationView
-            from textual.widgets import Label
+            from eavesdrop.widgets.turn import CronRunHeader
             conv = app.query_one("#conversation", ConversationView)
-            labels = list(conv.query(Label))
-            texts = [str(lbl.render()) for lbl in labels]
-            assert any("Morning Briefing" in t or "No isolated" in t for t in texts)
+            assert len(list(conv.query(CronRunHeader))) == 1
 
     @pytest.mark.asyncio
-    async def test_session_file_not_found_shows_message(self, tmp_path):
+    async def test_missing_session_file_shows_cron_header(self, tmp_path):
         job_id = "job-uuid-1"
         cron_dir = tmp_path / "cron"
         runs_dir = cron_dir / "runs"
         sessions_dir = tmp_path / "sessions"
         sessions_dir.mkdir()
         _write_jobs(cron_dir, [_job_dict(job_id=job_id)])
-        # Run points to a session that doesn't exist
-        _write_runs(runs_dir, job_id, [_run_line(session_id="nonexistent-session")])
+        # Run points to a session that doesn't exist in sessions_dir
+        _write_runs(runs_dir, job_id, [_run_line(session_id="nonexistent-session-id")])
 
         app = EavesdropApp(
             sessions_dir=sessions_dir,
@@ -431,14 +429,13 @@ class TestCronBrowserSessionLoad:
             job = cron._jobs[0]
             from eavesdrop.cron_parser import load_runs
             runs = load_runs(cron_dir, job_id)
-
-            # Post NoSession (what would happen if session file is missing)
-            cron.post_message(CronBrowser.NoSession(
-                job_name=job.name,
-                reason="Session file not found",
-            ))
+            # State is "missing" so path=None — cron header should still render
+            cron.post_message(CronBrowser.SessionRequested(path=None, run=runs[0], job=job))
             await pilot.pause()
-            # Should not crash
+            from eavesdrop.widgets.conversation import ConversationView
+            from eavesdrop.widgets.turn import CronRunHeader
+            conv = app.query_one("#conversation", ConversationView)
+            assert len(list(conv.query(CronRunHeader))) == 1
 
 
 # ---------------------------------------------------------------------------

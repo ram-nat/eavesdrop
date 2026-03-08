@@ -167,17 +167,12 @@ class CronBrowser(Widget):
     """
 
     class SessionRequested(TextualMessage):
-        def __init__(self, path: Path, run: CronRun, job: CronJob) -> None:
+        """Fired when a run is selected. path=None when no session file exists."""
+        def __init__(self, path: Path | None, run: CronRun, job: CronJob) -> None:
             super().__init__()
             self.path = path
             self.run = run
             self.job = job
-
-    class NoSession(TextualMessage):
-        def __init__(self, job_name: str, reason: str) -> None:
-            super().__init__()
-            self.job_name = job_name
-            self.reason = reason
 
     def __init__(self, cron_dir: Path, sessions_dir: Path, **kwargs):
         super().__init__(**kwargs)
@@ -228,35 +223,11 @@ class CronBrowser(Widget):
         elif self._level == "runs" and isinstance(event.item, CronRunItem):
             run = event.item.run
             job = self._selected_job
-            job_name = job.name if job else "?"
             state = event.item.session_state
-            if state == "no_session":
-                self.post_message(self.NoSession(
-                    job_name=job_name,
-                    reason="No isolated session (job may use sessionTarget: main)",
-                ))
-                return
-            if state == "deleted":
-                sid = (run.session_id or "")[:8]
-                self.post_message(self.NoSession(
-                    job_name=job_name,
-                    reason=f"Session {sid}… was deleted by openclaw",
-                ))
-                return
-            if state == "missing":
-                sid = (run.session_id or "")[:8]
-                self.post_message(self.NoSession(
-                    job_name=job_name,
-                    reason=f"Session file not found for ID {sid}…",
-                ))
-                return
-            path = find_session(self._sessions_dir, run.session_id)
-            if path is None:
-                self.post_message(self.NoSession(
-                    job_name=job_name,
-                    reason=f"Session file not found for ID {(run.session_id or '')[:8]}…",
-                ))
-                return
+            if state == "found":
+                path = find_session(self._sessions_dir, run.session_id)
+            else:
+                path = None
             self.post_message(self.SessionRequested(path=path, run=run, job=job))
 
     def action_back(self) -> None:

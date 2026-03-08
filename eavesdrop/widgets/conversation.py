@@ -160,18 +160,18 @@ class ConversationView(VerticalScroll):
 
     def load_session(
         self,
-        path: Path,
+        path: Path | None,
         cron_context: CronRunContext | None = None,
     ) -> None:
         self._current_path = path
-        self._session = parse_file(path)
+        self._session = parse_file(path) if path is not None else None
         self._cron_context = cron_context
         self._assistant_turns = []
         self._tool_result_blocks = []
         self._debug_section = None
         self._rebuild()
         try:
-            self._file_byte_offset = path.stat().st_size
+            self._file_byte_offset = path.stat().st_size if path is not None else 0
         except OSError:
             self._file_byte_offset = 0
 
@@ -219,14 +219,6 @@ class ConversationView(VerticalScroll):
         except Exception:
             pass
 
-        if self._session is None:
-            self.mount(Label("No session loaded.", classes="empty-label"))
-            return
-
-        if self._session.error:
-            self.mount(Label(f"Permission denied: {self._session.error}", classes="empty-label"))
-            return
-
         if self._cron_context is not None:
             ctx = self._cron_context
             self.mount(CronRunHeader(ctx.job, ctx.run))
@@ -236,7 +228,19 @@ class ConversationView(VerticalScroll):
             dbg = DebugLogSection(entries)
             self._debug_section = dbg
             self.mount(dbg)
+            if self._session is None:
+                self.mount(Label("(no session file)", classes="empty-label"))
+                self.scroll_home(animate=False)
+                return
             self.mount(Label("── Session content ──────────────────────────", classes="empty-label"))
+
+        if self._session is None:
+            self.mount(Label("No session loaded.", classes="empty-label"))
+            return
+
+        if self._session.error:
+            self.mount(Label(f"Permission denied: {self._session.error}", classes="empty-label"))
+            return
 
         prologue, turns = _group_turns(self._session.events)
 
@@ -269,7 +273,7 @@ class ConversationView(VerticalScroll):
 
         self.scroll_home(animate=False)
 
-    def reload(self, path: Path) -> None:
+    def reload(self, path: Path | None) -> None:
         self.load_session(path, cron_context=self._cron_context)
 
     def action_toggle_debug_log(self) -> None:

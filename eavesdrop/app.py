@@ -111,12 +111,14 @@ class EavesdropApp(App):
             if paths:
                 self._load(paths[0])
 
-    def _load(self, path: Path, cron_context: CronRunContext | None = None) -> None:
+    def _load(self, path: Path | None, cron_context: CronRunContext | None = None) -> None:
         self._current_path = path
         conv = self.query_one("#conversation", ConversationView)
         conv.load_session(path, cron_context=cron_context)
-        short = session_uuid(path)[:8]
-        self.sub_title = short
+        if path is not None:
+            self.sub_title = session_uuid(path)[:8]
+        elif cron_context is not None:
+            self.sub_title = cron_context.job.name[:20]
 
     def action_load_selected(self) -> None:
         if self._cron_mode:
@@ -193,19 +195,6 @@ class EavesdropApp(App):
         )
         self._load(event.path, cron_context=ctx)
 
-    def on_cron_browser_no_session(self, event: CronBrowser.NoSession) -> None:
-        conv = self.query_one("#conversation", ConversationView)
-        conv._session = None
-        conv._cron_context = None
-        # Show an informative message in place of session content
-        from textual.widgets import Label as TLabel
-        for child in list(conv.children):
-            if child.id != "search-bar-row":
-                child.remove()
-        conv.mount(TLabel(
-            f"No session for '{event.job_name}': {event.reason}",
-            classes="empty-label",
-        ))
 
     def action_toggle_follow(self) -> None:
         self._follow_mode = not self._follow_mode
