@@ -501,3 +501,246 @@ class TestCronCLIFlag:
         main()
 
         assert created_app["start_cron"] is False
+
+
+# ---------------------------------------------------------------------------
+# DEFAULT_OPENCLAW_DIR derivation  (bug: was hardcoded to ~/. openclaw)
+# ---------------------------------------------------------------------------
+
+class TestDefaultPaths:
+    def test_openclaw_dir_derived_from_sessions_dir(self):
+        """openclaw_dir must be 3 levels up from sessions_dir, not hardcoded to ~/. openclaw.
+
+        With EAVESDROP_SESSIONS_DIR=/home/openclaw/.openclaw/agents/main-cloud/sessions,
+        DEFAULT_OPENCLAW_DIR must equal /home/openclaw/.openclaw, not /home/<user>/.openclaw.
+        """
+        import os
+        from eavesdrop.app import DEFAULT_OPENCLAW_DIR, DEFAULT_SESSIONS_DIR
+        if "EAVESDROP_OPENCLAW_DIR" in os.environ:
+            pytest.skip("EAVESDROP_OPENCLAW_DIR is explicitly set — derivation not active")
+        assert DEFAULT_OPENCLAW_DIR == DEFAULT_SESSIONS_DIR.parent.parent.parent
+
+    def test_openclaw_dir_env_override(self, tmp_path, monkeypatch):
+        """EAVESDROP_OPENCLAW_DIR overrides the derived default."""
+        import importlib
+        import eavesdrop.app as app_module
+        monkeypatch.setenv("EAVESDROP_OPENCLAW_DIR", str(tmp_path))
+        importlib.reload(app_module)
+        try:
+            assert app_module.DEFAULT_OPENCLAW_DIR == tmp_path
+        finally:
+            importlib.reload(app_module)
+
+
+# ---------------------------------------------------------------------------
+# No-session label messages  (bug: unhelpful "session file not found")
+# ---------------------------------------------------------------------------
+
+def _label_texts(conv) -> list[str]:
+    """Collect plain text of all Labels inside a ConversationView."""
+    from textual.widgets import Label
+    texts = []
+    for lbl in conv.query(Label):
+        try:
+            texts.append(str(lbl.render()))
+        except Exception:
+            pass
+    return texts
+
+
+class TestNoSessionMessages:
+    @pytest.mark.asyncio
+    async def test_deleted_message_contains_uuid_and_retention(self, tmp_path):
+        """Bug: was showing generic 'session file not found'; must say 'deleted by openclaw retention'."""
+        job_id = "job-uuid-1"
+        session_id = "sess-uuid-deleted"
+        cron_dir = tmp_path / "cron"
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+        _write_jobs(cron_dir, [_job_dict(job_id=job_id)])
+        # Create only the deleted variant
+        (sessions_dir / f"{session_id}.jsonl.deleted.1234567890").write_text("")
+        _write_runs(cron_dir / "runs", job_id, [_run_line(session_id=session_id)])
+
+        app = EavesdropApp(
+            sessions_dir=sessions_dir,
+            openclaw_dir=tmp_path,
+            start_cron=True,
+        )
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.pause()
+            cron = app.query_one("#cron-browser", CronBrowser)
+            job = cron._jobs[0]
+            from eavesdrop.cron_parser import load_runs, CronRunContext
+            runs = load_runs(cron_dir, job_id)
+            cron.post_message(CronBrowser.SessionRequested(
+                path=None, run=runs[0], job=job, session_state="deleted"
+            ))
+            await pilot.pause()
+            from eavesdrop.widgets.conversation import ConversationView
+            conv = app.query_one("#conversation", ConversationView)
+            texts = _label_texts(conv)
+            combined = " ".join(texts)
+            assert session_id in combined
+            assert "retention" in combined
+
+    @pytest.mark.asyncio
+    async def test_no_isolated_session_message(self, tmp_path):
+        """sessionTarget: main runs should say 'no isolated session'."""
+        job_id = "job-uuid-1"
+        cron_dir = tmp_path / "cron"
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+        _write_jobs(cron_dir, [_job_dict(job_id=job_id)])
+        line = _run_line()
+        del line["sessionId"]
+        _write_runs(cron_dir / "runs", job_id, [line])
+
+        app = EavesdropApp(
+            sessions_dir=sessions_dir,
+            openclaw_dir=tmp_path,
+            start_cron=True,
+        )
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.pause()
+            cron = app.query_one("#cron-browser", CronBrowser)
+            job = cron._jobs[0]
+            from eavesdrop.cron_parser import load_runs
+            runs = load_runs(cron_dir, job_id)
+            cron.post_message(CronBrowser.SessionRequested(
+                path=None, run=runs[0], job=job, session_state="no_session"
+            ))
+            await pilot.pause()
+            from eavesdrop.widgets.conversation import ConversationView
+            conv = app.query_one("#conversation", ConversationView)
+            texts = _label_texts(conv)
+            assert any("isolated session" in t for t in texts)
+
+    @pytest.mark.asyncio
+    async def test_no_session_and_no_debug_log_appends_note(self, tmp_path):
+        """Bug: no-session + no-debug-log should say both are empty."""
+        job_id = "job-uuid-1"
+        cron_dir = tmp_path / "cron"
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+        _write_jobs(cron_dir, [_job_dict(job_id=job_id)])
+        _write_runs(cron_dir / "runs", job_id, [_run_line(session_id="gone-session")])
+
+        # No debug log file at all
+        app = EavesdropApp(
+            sessions_dir=sessions_dir,
+            openclaw_dir=tmp_path,  # no logs/openclaw-debug.log here
+            start_cron=True,
+        )
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.pause()
+            cron = app.query_one("#cron-browser", CronBrowser)
+            job = cron._jobs[0]
+            from eavesdrop.cron_parser import load_runs
+            runs = load_runs(cron_dir, job_id)
+            cron.post_message(CronBrowser.SessionRequested(
+                path=None, run=runs[0], job=job, session_state="missing"
+            ))
+            await pilot.pause()
+            from eavesdrop.widgets.conversation import ConversationView
+            conv = app.query_one("#conversation", ConversationView)
+            texts = _label_texts(conv)
+            assert any("no debug log entries" in t for t in texts)
+
+    @pytest.mark.asyncio
+    async def test_cron_header_shown_even_without_session(self, tmp_path):
+        """Bug: deleted/missing sessions used to show a dead-end label; must show CronRunHeader."""
+        job_id = "job-uuid-1"
+        cron_dir = tmp_path / "cron"
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+        _write_jobs(cron_dir, [_job_dict(job_id=job_id)])
+        _write_runs(cron_dir / "runs", job_id, [_run_line(session_id="gone-session")])
+
+        app = EavesdropApp(
+            sessions_dir=sessions_dir,
+            openclaw_dir=tmp_path,
+            start_cron=True,
+        )
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.pause()
+            cron = app.query_one("#cron-browser", CronBrowser)
+            job = cron._jobs[0]
+            from eavesdrop.cron_parser import load_runs
+            runs = load_runs(cron_dir, job_id)
+            cron.post_message(CronBrowser.SessionRequested(
+                path=None, run=runs[0], job=job, session_state="missing"
+            ))
+            await pilot.pause()
+            from eavesdrop.widgets.conversation import ConversationView
+            from eavesdrop.widgets.turn import CronRunHeader, DebugLogSection
+            conv = app.query_one("#conversation", ConversationView)
+            assert len(list(conv.query(CronRunHeader))) == 1
+            assert len(list(conv.query(DebugLogSection))) == 1
+
+
+# ---------------------------------------------------------------------------
+# session_state carried through SessionRequested → CronRunContext → _rebuild
+# ---------------------------------------------------------------------------
+
+class TestSessionStateFlow:
+    @pytest.mark.asyncio
+    async def test_session_state_stored_on_cron_run_item(self, tmp_path):
+        job_id = "job-uuid-1"
+        session_id = "sess-deleted"
+        cron_dir = tmp_path / "cron"
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+        _write_jobs(cron_dir, [_job_dict(job_id=job_id)])
+        # Only deleted variant exists
+        (sessions_dir / f"{session_id}.jsonl.deleted.111").write_text("")
+        _write_runs(cron_dir / "runs", job_id, [_run_line(session_id=session_id)])
+
+        app = EavesdropApp(
+            sessions_dir=sessions_dir,
+            openclaw_dir=tmp_path,
+            start_cron=True,
+        )
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.pause()
+            cron = app.query_one("#cron-browser", CronBrowser)
+            job = cron._jobs[0]
+            cron._selected_job = job
+            cron._level = "runs"
+            cron._render_runs(job)
+            await pilot.pause()
+            items = list(cron.query(CronRunItem))
+            assert len(items) == 1
+            assert items[0].session_state == "deleted"
+
+    @pytest.mark.asyncio
+    async def test_session_state_in_cron_run_context(self, tmp_path):
+        """session_state must flow into CronRunContext so _rebuild picks the right label."""
+        job_id = "job-uuid-1"
+        session_id = "sess-deleted"
+        cron_dir = tmp_path / "cron"
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+        _write_jobs(cron_dir, [_job_dict(job_id=job_id)])
+        (sessions_dir / f"{session_id}.jsonl.deleted.111").write_text("")
+        _write_runs(cron_dir / "runs", job_id, [_run_line(session_id=session_id)])
+
+        app = EavesdropApp(
+            sessions_dir=sessions_dir,
+            openclaw_dir=tmp_path,
+            start_cron=True,
+        )
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.pause()
+            cron = app.query_one("#cron-browser", CronBrowser)
+            job = cron._jobs[0]
+            from eavesdrop.cron_parser import load_runs
+            runs = load_runs(cron_dir, job_id)
+            cron.post_message(CronBrowser.SessionRequested(
+                path=None, run=runs[0], job=job, session_state="deleted"
+            ))
+            await pilot.pause()
+            from eavesdrop.widgets.conversation import ConversationView
+            conv = app.query_one("#conversation", ConversationView)
+            assert conv._cron_context is not None
+            assert conv._cron_context.session_state == "deleted"

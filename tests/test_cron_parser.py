@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from datetime import datetime, timezone
+
 from eavesdrop.cron_parser import (
     CronJob,
     CronRun,
@@ -18,6 +20,7 @@ from eavesdrop.cron_parser import (
     load_jobs,
     load_runs,
     relative_time,
+    session_file_state,
 )
 
 
@@ -462,3 +465,159 @@ class TestFormatHelpers:
         past_ms = int(time.time() * 1000) - 7_200_000  # 2 hours ago
         result = relative_time(past_ms)
         assert "ago" in result
+
+
+# ---------------------------------------------------------------------------
+# session_file_state  (bug: distinguish deleted vs missing)
+# ---------------------------------------------------------------------------
+
+class TestSessionFileState:
+    def test_found_plain_jsonl(self, tmp_path):
+        sid = "abc12345-uuid"
+        (tmp_path / f"{sid}.jsonl").write_text("")
+        assert session_file_state(tmp_path, sid) == "found"
+
+    def test_found_reset_variant(self, tmp_path):
+        sid = "abc12345-uuid"
+        (tmp_path / f"{sid}.jsonl.reset.1234567890").write_text("")
+        assert session_file_state(tmp_path, sid) == "found"
+
+    def test_deleted_only(self, tmp_path):
+        sid = "abc12345-uuid"
+        (tmp_path / f"{sid}.jsonl.deleted.9999999999").write_text("")
+        assert session_file_state(tmp_path, sid) == "deleted"
+
+    def test_missing(self, tmp_path):
+        assert session_file_state(tmp_path, "no-such-uuid") == "missing"
+
+    def test_found_takes_priority_over_deleted(self, tmp_path):
+        sid = "abc12345-uuid"
+        (tmp_path / f"{sid}.jsonl").write_text("")
+        (tmp_path / f"{sid}.jsonl.deleted.9999999999").write_text("")
+        assert session_file_state(tmp_path, sid) == "found"
+
+    def test_missing_directory(self, tmp_path):
+        assert session_file_state(tmp_path / "nonexistent", "abc") == "missing"
+
+    def test_permission_error_returns_missing(self, tmp_path, monkeypatch):
+        def raise_err(*args, **kwargs):
+            raise PermissionError("denied")
+        monkeypatch.setattr(Path, "iterdir", raise_err)
+        assert session_file_state(tmp_path, "abc") == "missing"
+
+
+# ---------------------------------------------------------------------------
+# load_debug_log — pino format  (bug: wrong field names for ts/module/msg)
+# ---------------------------------------------------------------------------
+
+def _ms_to_iso(ts_ms: int) -> str:
+    return datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%S.000Z"
+    )
+
+
+def _pino_line(ts_ms: int, module: str, msg, job_id: str = "") -> dict:
+    """Build a pino-format log entry as openclaw produces."""
+    name_json = json.dumps({"module": module})
+    ts_iso = _ms_to_iso(ts_ms)
+    entry: dict = {
+        "0": json.dumps({"subsystem": "test"}),
+        "1": msg,
+        "_meta": {
+            "runtime": "node",
+            "name": name_json,
+            "date": ts_iso,
+            "logLevelId": 2,
+            "logLevelName": "DEBUG",
+        },
+        "time": ts_iso,
+    }
+    return entry
+
+
+class TestLoadDebugLogPinoFormat:
+    """Tests for the pino log format used by openclaw (Node.js)."""
+
+    def test_timestamp_from_meta_date(self, tmp_path):
+        # Bug: was reading _meta.ts (doesn't exist); must read _meta.date (ISO string)
+        log = tmp_path / "debug.log"
+        run_ts = 1_000_000_000_000
+        with open(log, "w") as f:
+            f.write(json.dumps(_pino_line(run_ts, "cron", "hello")) + "\n")
+        entries = load_debug_log(log, "job1", run_ts, window_ms=60_000)
+        assert len(entries) == 1
+
+    def test_timestamp_from_top_level_time(self, tmp_path):
+        # Also valid: top-level "time" field (same ISO string)
+        log = tmp_path / "debug.log"
+        run_ts = 1_000_000_000_000
+        entry = _pino_line(run_ts, "cron", "hello")
+        del entry["_meta"]["date"]  # remove date, keep top-level time
+        with open(log, "w") as f:
+            f.write(json.dumps(entry) + "\n")
+        entries = load_debug_log(log, "job1", run_ts)
+        assert len(entries) == 1
+
+    def test_entry_outside_window_excluded(self, tmp_path):
+        # Confirms the timestamp is actually used for filtering, not ignored
+        log = tmp_path / "debug.log"
+        run_ts = 1_000_000_000_000
+        far_ts = run_ts + 300_000  # 5 minutes away, window is 60s
+        with open(log, "w") as f:
+            f.write(json.dumps(_pino_line(far_ts, "cron", "too late")) + "\n")
+        entries = load_debug_log(log, "job1", run_ts, window_ms=60_000)
+        assert len(entries) == 0
+
+    def test_module_from_meta_name_json_string(self, tmp_path):
+        # Bug: was reading _meta.module (doesn't exist); must parse _meta.name JSON
+        log = tmp_path / "debug.log"
+        run_ts = 1_000_000_000_000
+        with open(log, "w") as f:
+            f.write(json.dumps(_pino_line(run_ts, "cron", "cron entry")) + "\n")
+            f.write(json.dumps(_pino_line(run_ts, "executor", "other entry")) + "\n")
+        entries = load_debug_log(log, "job-no-match", run_ts)
+        assert len(entries) == 1
+        assert entries[0]["1"] == "cron entry"
+
+    def test_message_from_key_1(self, tmp_path):
+        # Bug: was reading "msg" key (doesn't exist in pino); must read "1"
+        log = tmp_path / "debug.log"
+        run_ts = 1_000_000_000_000
+        job_id = "my-job-uuid"
+        entry = _pino_line(run_ts, "executor", f"processing {job_id}")
+        with open(log, "w") as f:
+            f.write(json.dumps(entry) + "\n")
+        entries = load_debug_log(log, job_id, run_ts)
+        assert len(entries) == 1
+
+    def test_message_as_dict_matched_by_job_id(self, tmp_path):
+        # "1" can be a dict (e.g. {"jobId": "...", "jobName": "..."})
+        log = tmp_path / "debug.log"
+        run_ts = 1_000_000_000_000
+        job_id = "my-job-uuid"
+        entry = _pino_line(run_ts, "executor", {"jobId": job_id, "jobName": "Test"})
+        with open(log, "w") as f:
+            f.write(json.dumps(entry) + "\n")
+        entries = load_debug_log(log, job_id, run_ts)
+        assert len(entries) == 1
+
+    def test_non_cron_module_no_job_id_excluded(self, tmp_path):
+        log = tmp_path / "debug.log"
+        run_ts = 1_000_000_000_000
+        entry = _pino_line(run_ts, "executor", "unrelated message")
+        with open(log, "w") as f:
+            f.write(json.dumps(entry) + "\n")
+        entries = load_debug_log(log, "job-no-match", run_ts)
+        assert len(entries) == 0
+
+    def test_mixed_pino_and_legacy_format(self, tmp_path):
+        # Both formats can coexist in the same file
+        log = tmp_path / "debug.log"
+        run_ts = 1_000_000_000_000
+        legacy = {"_meta": {"module": "cron", "ts": run_ts}, "msg": "legacy entry"}
+        pino = _pino_line(run_ts, "cron", "pino entry")
+        with open(log, "w") as f:
+            f.write(json.dumps(legacy) + "\n")
+            f.write(json.dumps(pino) + "\n")
+        entries = load_debug_log(log, "job-no-match", run_ts)
+        assert len(entries) == 2
