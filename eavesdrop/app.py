@@ -26,7 +26,7 @@ DEFAULT_SESSIONS_DIR = Path(
 DEFAULT_OPENCLAW_DIR = Path(
     os.environ.get(
         "EAVESDROP_OPENCLAW_DIR",
-        Path.home() / ".openclaw",
+        DEFAULT_SESSIONS_DIR.parent.parent.parent,  # agents/main-cloud/sessions → root
     )
 )
 
