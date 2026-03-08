@@ -42,6 +42,7 @@ class CronRunContext:
     job: CronJob
     run: CronRun
     debug_log_path: Path | None = None
+    session_state: str = "found"  # "found" | "deleted" | "missing" | "no_session"
 
 
 def load_jobs(cron_dir: Path) -> list[CronJob]:

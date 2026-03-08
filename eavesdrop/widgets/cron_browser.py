@@ -168,11 +168,18 @@ class CronBrowser(Widget):
 
     class SessionRequested(TextualMessage):
         """Fired when a run is selected. path=None when no session file exists."""
-        def __init__(self, path: Path | None, run: CronRun, job: CronJob) -> None:
+        def __init__(
+            self,
+            path: Path | None,
+            run: CronRun,
+            job: CronJob,
+            session_state: str = "found",
+        ) -> None:
             super().__init__()
             self.path = path
             self.run = run
             self.job = job
+            self.session_state = session_state
 
     def __init__(self, cron_dir: Path, sessions_dir: Path, **kwargs):
         super().__init__(**kwargs)
@@ -228,7 +235,7 @@ class CronBrowser(Widget):
                 path = find_session(self._sessions_dir, run.session_id)
             else:
                 path = None
-            self.post_message(self.SessionRequested(path=path, run=run, job=job))
+            self.post_message(self.SessionRequested(path=path, run=run, job=job, session_state=state))
 
     def action_back(self) -> None:
         if self._level == "runs":

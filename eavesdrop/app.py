@@ -192,6 +192,7 @@ class EavesdropApp(App):
             job=event.job,
             run=event.run,
             debug_log_path=debug_log_path,
+            session_state=event.session_state,
         )
         self._load(event.path, cron_context=ctx)
 

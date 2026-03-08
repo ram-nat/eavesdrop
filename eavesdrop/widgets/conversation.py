@@ -229,7 +229,17 @@ class ConversationView(VerticalScroll):
             self._debug_section = dbg
             self.mount(dbg)
             if self._session is None:
-                self.mount(Label("(no session file)", classes="empty-label"))
+                state = ctx.session_state
+                sid = ctx.run.session_id or ""
+                if state == "deleted":
+                    msg = f"(session {sid} deleted by openclaw retention)"
+                elif state == "no_session":
+                    msg = "(no isolated session — job uses sessionTarget: main)"
+                else:
+                    msg = f"(no session file found for {sid})" if sid else "(no session file)"
+                if not entries:
+                    msg += " — no debug log entries either"
+                self.mount(Label(msg, classes="empty-label"))
                 self.scroll_home(animate=False)
                 return
             self.mount(Label("── Session content ──────────────────────────", classes="empty-label"))
