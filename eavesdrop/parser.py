@@ -206,11 +206,15 @@ def session_uuid(path: Path) -> str:
     return path.name.split(".jsonl")[0]
 
 
-def scan_sessions(sessions_dir: Path) -> list[Path]:
+def scan_sessions(
+    sessions_dir: Path,
+    exclude_ids: set[str] | None = None,
+) -> list[Path]:
     """Return active session files sorted by mtime descending.
 
     Includes both plain (uuid.jsonl) and closed (uuid.jsonl.reset.TIMESTAMP) files.
     Excludes deleted sessions (uuid.jsonl.deleted.TIMESTAMP) and non-JSONL files.
+    If exclude_ids is provided, sessions whose UUID is in the set are omitted.
     """
     files = []
     try:
@@ -223,6 +227,8 @@ def scan_sessions(sessions_dir: Path) -> list[Path]:
             files.append(p)
     except (FileNotFoundError, NotADirectoryError, PermissionError, OSError):
         return []
+    if exclude_ids:
+        files = [p for p in files if session_uuid(p) not in exclude_ids]
     files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return files
 

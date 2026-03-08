@@ -16,6 +16,7 @@ from eavesdrop.cron_parser import (
     find_session,
     fmt_duration,
     fmt_ms,
+    get_cron_session_ids,
     load_debug_log,
     load_jobs,
     load_runs,
@@ -621,3 +622,83 @@ class TestLoadDebugLogPinoFormat:
             f.write(json.dumps(pino) + "\n")
         entries = load_debug_log(log, "job-no-match", run_ts)
         assert len(entries) == 2
+
+
+# ---------------------------------------------------------------------------
+# get_cron_session_ids
+# ---------------------------------------------------------------------------
+
+class TestGetCronSessionIds:
+    def _runs_dir(self, tmp_path: Path) -> Path:
+        runs_dir = tmp_path / "cron" / "runs"
+        runs_dir.mkdir(parents=True)
+        return runs_dir
+
+    def test_returns_session_ids_from_run_files(self, tmp_path):
+        runs_dir = self._runs_dir(tmp_path)
+        _write_runs(runs_dir / "job1.jsonl", [
+            _run_line(session_id="sess-aaa"),
+            _run_line(session_id="sess-bbb"),
+        ])
+        ids = get_cron_session_ids(tmp_path / "cron")
+        assert ids == {"sess-aaa", "sess-bbb"}
+
+    def test_aggregates_across_multiple_job_files(self, tmp_path):
+        runs_dir = self._runs_dir(tmp_path)
+        _write_runs(runs_dir / "job1.jsonl", [_run_line(session_id="sess-1")])
+        _write_runs(runs_dir / "job2.jsonl", [_run_line(session_id="sess-2")])
+        ids = get_cron_session_ids(tmp_path / "cron")
+        assert ids == {"sess-1", "sess-2"}
+
+    def test_returns_empty_set_when_runs_dir_missing(self, tmp_path):
+        # cron dir exists but no runs/ subdir
+        (tmp_path / "cron").mkdir()
+        ids = get_cron_session_ids(tmp_path / "cron")
+        assert ids == set()
+
+    def test_returns_empty_set_when_cron_dir_missing(self, tmp_path):
+        ids = get_cron_session_ids(tmp_path / "nonexistent")
+        assert ids == set()
+
+    def test_skips_non_jsonl_files(self, tmp_path):
+        runs_dir = self._runs_dir(tmp_path)
+        (runs_dir / "readme.txt").write_text("not a run file")
+        _write_runs(runs_dir / "job1.jsonl", [_run_line(session_id="sess-real")])
+        ids = get_cron_session_ids(tmp_path / "cron")
+        assert ids == {"sess-real"}
+
+    def test_skips_lines_without_session_id(self, tmp_path):
+        runs_dir = self._runs_dir(tmp_path)
+        line_no_sess = _run_line()
+        del line_no_sess["sessionId"]
+        _write_runs(runs_dir / "job1.jsonl", [line_no_sess, _run_line(session_id="sess-ok")])
+        ids = get_cron_session_ids(tmp_path / "cron")
+        assert ids == {"sess-ok"}
+
+    def test_skips_malformed_json_lines(self, tmp_path):
+        runs_dir = self._runs_dir(tmp_path)
+        with open(runs_dir / "job1.jsonl", "w") as f:
+            f.write("not json\n")
+            f.write(json.dumps(_run_line(session_id="sess-valid")) + "\n")
+            f.write("{broken\n")
+        ids = get_cron_session_ids(tmp_path / "cron")
+        assert ids == {"sess-valid"}
+
+    def test_handles_permission_error_on_runs_dir(self, tmp_path, monkeypatch):
+        (tmp_path / "cron" / "runs").mkdir(parents=True)
+
+        def raise_err(*args, **kwargs):
+            raise PermissionError("denied")
+
+        monkeypatch.setattr(Path, "iterdir", raise_err)
+        ids = get_cron_session_ids(tmp_path / "cron")
+        assert ids == set()
+
+    def test_deduplicates_repeated_session_ids(self, tmp_path):
+        runs_dir = self._runs_dir(tmp_path)
+        _write_runs(runs_dir / "job1.jsonl", [
+            _run_line(session_id="sess-dup"),
+            _run_line(session_id="sess-dup"),
+        ])
+        ids = get_cron_session_ids(tmp_path / "cron")
+        assert ids == {"sess-dup"}

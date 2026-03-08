@@ -10,7 +10,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.widgets import Footer, Header, Label
 
-from eavesdrop.cron_parser import CronRunContext, load_debug_log
+from eavesdrop.cron_parser import CronRunContext, get_cron_session_ids, load_debug_log
 from eavesdrop.parser import scan_sessions, session_uuid
 from eavesdrop.widgets.conversation import ConversationView
 from eavesdrop.widgets.cron_browser import CronBrowser
@@ -89,8 +89,9 @@ class EavesdropApp(App):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         with Horizontal():
-            yield FileBrowser(self._sessions_dir, id="browser")
             cron_dir = self._openclaw_dir / "cron"
+            cron_ids = get_cron_session_ids(cron_dir)
+            yield FileBrowser(self._sessions_dir, exclude_ids=cron_ids, id="browser")
             yield CronBrowser(cron_dir, self._sessions_dir, id="cron-browser")
             yield ConversationView(id="conversation")
         yield Footer()
@@ -150,6 +151,8 @@ class EavesdropApp(App):
             return
         browser = self.query_one("#browser", FileBrowser)
         current_path = self._current_path
+        cron_dir = self._openclaw_dir / "cron"
+        browser.set_exclude_ids(get_cron_session_ids(cron_dir))
         browser.load_sessions()
         if current_path:
             browser.select_path(current_path)

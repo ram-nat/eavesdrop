@@ -217,6 +217,31 @@ def load_debug_log(
     return entries
 
 
+def get_cron_session_ids(cron_dir: Path) -> set[str]:
+    """Return all session IDs referenced in any cron run file."""
+    ids: set[str] = set()
+    runs_dir = cron_dir / "runs"
+    try:
+        for p in runs_dir.iterdir():
+            if p.suffix != ".jsonl":
+                continue
+            try:
+                text = p.read_text()
+            except OSError:
+                continue
+            for line in text.splitlines():
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                sid = obj.get("sessionId")
+                if sid:
+                    ids.add(sid)
+    except (FileNotFoundError, NotADirectoryError, PermissionError, OSError):
+        pass
+    return ids
+
+
 def fmt_ms(ts_ms: int | None) -> str:
     """Format a millisecond epoch timestamp as a local datetime string."""
     if ts_ms is None:

@@ -516,6 +516,42 @@ class TestScanSessions:
         paths = scan_sessions(tmp_path)
         assert all(isinstance(p, Path) for p in paths)
 
+    def test_exclude_ids_filters_matching_session(self, tmp_path):
+        uuid = "f6ba1f43-a58c-4fa9-8f70-7e7cd9c03e83"
+        (tmp_path / f"{uuid}.jsonl").write_text("{}")
+        (tmp_path / "other-uuid.jsonl").write_text("{}")
+        paths = scan_sessions(tmp_path, exclude_ids={uuid})
+        names = {p.name for p in paths}
+        assert f"{uuid}.jsonl" not in names
+        assert "other-uuid.jsonl" in names
+
+    def test_exclude_ids_none_is_backwards_compatible(self, tmp_path):
+        (tmp_path / "s.jsonl").write_text("{}")
+        paths_default = scan_sessions(tmp_path)
+        paths_none = scan_sessions(tmp_path, exclude_ids=None)
+        assert [p.name for p in paths_default] == [p.name for p in paths_none]
+
+    def test_exclude_ids_empty_set_shows_all(self, tmp_path):
+        (tmp_path / "s.jsonl").write_text("{}")
+        paths = scan_sessions(tmp_path, exclude_ids=set())
+        assert len(paths) == 1
+
+    def test_exclude_ids_reset_variant_excluded(self, tmp_path):
+        uuid = "f6ba1f43-a58c-4fa9-8f70-7e7cd9c03e83"
+        fname = f"{uuid}.jsonl.reset.2026-01-01T00-00-00.000Z"
+        (tmp_path / fname).write_text("{}")
+        paths = scan_sessions(tmp_path, exclude_ids={uuid})
+        assert paths == []
+
+    def test_exclude_ids_non_matching_uuid_kept(self, tmp_path):
+        uuid_a = "aaaaaaaa-0000-0000-0000-000000000000"
+        uuid_b = "bbbbbbbb-0000-0000-0000-000000000000"
+        (tmp_path / f"{uuid_a}.jsonl").write_text("{}")
+        (tmp_path / f"{uuid_b}.jsonl").write_text("{}")
+        paths = scan_sessions(tmp_path, exclude_ids={uuid_a})
+        assert len(paths) == 1
+        assert session_uuid(paths[0]) == uuid_b
+
 
 # ---------------------------------------------------------------------------
 # session_uuid

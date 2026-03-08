@@ -108,17 +108,21 @@ class FileBrowser(ListView):
     }
     """
 
-    def __init__(self, sessions_dir: Path, **kwargs):
+    def __init__(self, sessions_dir: Path, exclude_ids: set[str] | None = None, **kwargs):
         super().__init__(**kwargs)
         self._sessions_dir = sessions_dir
+        self._exclude_ids: set[str] = exclude_ids or set()
         self._summaries: list[dict] = []
 
     def on_mount(self) -> None:
         self.load_sessions()
 
+    def set_exclude_ids(self, ids: set[str]) -> None:
+        self._exclude_ids = ids
+
     def load_sessions(self) -> None:
         self.clear()
-        paths = scan_sessions(self._sessions_dir)
+        paths = scan_sessions(self._sessions_dir, exclude_ids=self._exclude_ids or None)
         self._summaries = [session_summary(p) for p in paths]
         for s in self._summaries:
             self.append(SessionItem(s))
