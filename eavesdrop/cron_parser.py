@@ -170,8 +170,15 @@ def load_debug_log(
                 except json.JSONDecodeError:
                     continue
 
+                # Timestamp: _meta.date or top-level time (ISO string from pino),
+                # or legacy _meta.ts / ts (ms int).
                 meta = obj.get("_meta", {}) or {}
-                raw_ts = meta.get("ts", obj.get("ts", 0))
+                raw_ts = (
+                    meta.get("date")
+                    or obj.get("time")
+                    or meta.get("ts")
+                    or obj.get("ts", 0)
+                )
                 ts_ms: int = 0
                 if isinstance(raw_ts, (int, float)):
                     ts_ms = int(raw_ts)
@@ -185,8 +192,20 @@ def load_debug_log(
                 if ts_ms < lo or ts_ms > hi:
                     continue
 
-                module = meta.get("module", "")
-                msg = str(obj.get("msg", ""))
+                # Module: _meta.name is a JSON string {"module":"cron",...} in pino format.
+                module = ""
+                name_raw = meta.get("name", "") or meta.get("module", "")
+                if isinstance(name_raw, str) and name_raw.startswith("{"):
+                    try:
+                        module = json.loads(name_raw).get("module", "")
+                    except json.JSONDecodeError:
+                        pass
+                elif isinstance(name_raw, str):
+                    module = name_raw
+
+                # Message: pino uses positional keys "0", "1", ...; also check "msg".
+                msg = str(obj.get("1") or obj.get("msg") or obj.get("0") or "")
+
                 if module != "cron" and job_id not in msg and job_id not in str(obj):
                     continue
 

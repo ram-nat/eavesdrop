@@ -625,34 +625,68 @@ class DebugLogSection(Widget):
         super().__init__(**kwargs)
         self._entries = entries
 
+    @staticmethod
+    def _parse_pino_entry(entry: dict) -> tuple[str, str, str, str]:
+        """Return (ts_str, level, module, msg) from a pino-format log entry."""
+        import json as _json
+        meta = entry.get("_meta", {}) or {}
+
+        # Timestamp
+        raw_ts = meta.get("date") or entry.get("time") or meta.get("ts") or entry.get("ts", "")
+        if isinstance(raw_ts, (int, float)):
+            try:
+                dt = datetime.fromtimestamp(raw_ts / 1000, tz=timezone.utc).astimezone()
+                ts_str = dt.strftime("%H:%M:%S.") + f"{dt.microsecond // 1000:03d}"
+            except Exception:
+                ts_str = str(int(raw_ts))
+        elif isinstance(raw_ts, str) and raw_ts:
+            # ISO string: take HH:MM:SS.mmm portion
+            try:
+                dt = datetime.fromisoformat(raw_ts.replace("Z", "+00:00")).astimezone()
+                ts_str = dt.strftime("%H:%M:%S.") + f"{dt.microsecond // 1000:03d}"
+            except Exception:
+                ts_str = raw_ts[11:23] if len(raw_ts) > 11 else raw_ts
+        else:
+            ts_str = ""
+
+        # Level
+        level = meta.get("logLevelName") or meta.get("level") or ""
+
+        # Module from _meta.name JSON string
+        module = ""
+        name_raw = meta.get("name", "") or meta.get("module", "")
+        if isinstance(name_raw, str) and name_raw.startswith("{"):
+            try:
+                module = _json.loads(name_raw).get("module", "")
+            except Exception:
+                pass
+        elif isinstance(name_raw, str):
+            module = name_raw
+
+        # Message: pino positional keys "1" (message), then "msg", then "0" (context)
+        msg_val = entry.get("1") or entry.get("msg") or entry.get("0") or ""
+        if isinstance(msg_val, dict):
+            try:
+                msg = _json.dumps(msg_val, separators=(",", ":"))
+            except Exception:
+                msg = str(msg_val)
+        else:
+            msg = str(msg_val)
+
+        return ts_str, level, module, msg
+
     def _format_entries(self) -> str:
         if not self._entries:
             return "(no debug entries)"
         lines = []
         for entry in self._entries:
-            meta = entry.get("_meta", {}) or {}
-            raw_ts = meta.get("ts", entry.get("ts", ""))
-            level = meta.get("level", "")
-            module = meta.get("module", "")
-            msg = str(entry.get("msg", ""))
-
-            if isinstance(raw_ts, (int, float)):
-                try:
-                    dt = datetime.fromtimestamp(raw_ts / 1000, tz=timezone.utc).astimezone()
-                    ts_str = dt.strftime("%H:%M:%S.") + f"{dt.microsecond // 1000:03d}"
-                except Exception:
-                    ts_str = str(int(raw_ts))
-            elif isinstance(raw_ts, str) and len(raw_ts) > 11:
-                ts_str = raw_ts[11:23]
-            else:
-                ts_str = str(raw_ts)
-
-            prefix = f"[{ts_str}]"
+            ts_str, level, module, msg = self._parse_pino_entry(entry)
+            prefix = f"[{ts_str}]" if ts_str else ""
             if level:
                 prefix += f"  [{level}]"
             if module:
                 prefix += f"  [{module}]"
-            lines.append(f"{prefix}  {msg}")
+            lines.append(f"{prefix}  {msg}" if prefix else msg)
         return "\n".join(lines)
 
     def compose(self) -> ComposeResult:
