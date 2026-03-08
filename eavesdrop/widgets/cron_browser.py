@@ -16,6 +16,7 @@ from eavesdrop.cron_parser import (
     load_jobs,
     load_runs,
     find_session,
+    session_file_state,
     fmt_ms,
     fmt_duration,
     relative_time,
@@ -60,9 +61,10 @@ class CronJobItem(ListItem):
 
 
 class CronRunItem(ListItem):
-    def __init__(self, run: CronRun, **kwargs):
+    def __init__(self, run: CronRun, session_state: str = "no_session", **kwargs):
         super().__init__(**kwargs)
         self.run = run
+        self.session_state = session_state  # "found" | "deleted" | "missing" | "no_session"
 
     def compose(self) -> ComposeResult:
         r = self.run
@@ -75,7 +77,11 @@ class CronRunItem(ListItem):
             extra.append("[err]")
         if r.delivered is False:
             extra.append("[!delivery]")
-        if not r.session_id:
+        if self.session_state == "deleted":
+            extra.append("[deleted]")
+        elif self.session_state == "missing":
+            extra.append("[no session]")
+        elif self.session_state == "no_session":
             extra.append("[no session]")
 
         line1 = f"{fmt_ms(r.ts)}  {status_badge}  {duration}"
@@ -85,8 +91,10 @@ class CronRunItem(ListItem):
             line1 += "  " + " ".join(extra)
         yield Label(line1, classes="cron-run-line1")
 
-        if r.session_id:
+        if self.session_state == "found" and r.session_id:
             yield Label(f"session: {r.session_id[:7]}…", classes="cron-run-session")
+        elif self.session_state == "deleted":
+            yield Label("session deleted", classes="cron-run-session cron-run-deleted")
         elif r.summary:
             summ = r.summary[:40] + "…" if len(r.summary) > 40 else r.summary
             yield Label(summ, classes="cron-run-session")
@@ -153,6 +161,9 @@ class CronBrowser(Widget):
         color: $text-muted;
         width: 100%;
     }
+    CronBrowser .cron-run-deleted {
+        color: $text-disabled;
+    }
     """
 
     class SessionRequested(TextualMessage):
@@ -203,7 +214,11 @@ class CronBrowser(Widget):
         name_short = job.name[:22]
         self.query_one("#cron-browser-header", Label).update(f"{name_short}  ↩Esc")
         for run in runs:
-            lv.append(CronRunItem(run))
+            if run.session_id:
+                state = session_file_state(self._sessions_dir, run.session_id)
+            else:
+                state = "no_session"
+            lv.append(CronRunItem(run, session_state=state))
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if self._level == "jobs" and isinstance(event.item, CronJobItem):
@@ -214,18 +229,32 @@ class CronBrowser(Widget):
             run = event.item.run
             job = self._selected_job
             job_name = job.name if job else "?"
-            if not run.session_id:
+            state = event.item.session_state
+            if state == "no_session":
                 self.post_message(self.NoSession(
                     job_name=job_name,
                     reason="No isolated session (job may use sessionTarget: main)",
                 ))
                 return
-            path = find_session(self._sessions_dir, run.session_id)
-            if path is None:
-                sid = run.session_id[:8]
+            if state == "deleted":
+                sid = (run.session_id or "")[:8]
+                self.post_message(self.NoSession(
+                    job_name=job_name,
+                    reason=f"Session {sid}… was deleted by openclaw",
+                ))
+                return
+            if state == "missing":
+                sid = (run.session_id or "")[:8]
                 self.post_message(self.NoSession(
                     job_name=job_name,
                     reason=f"Session file not found for ID {sid}…",
+                ))
+                return
+            path = find_session(self._sessions_dir, run.session_id)
+            if path is None:
+                self.post_message(self.NoSession(
+                    job_name=job_name,
+                    reason=f"Session file not found for ID {(run.session_id or '')[:8]}…",
                 ))
                 return
             self.post_message(self.SessionRequested(path=path, run=run, job=job))

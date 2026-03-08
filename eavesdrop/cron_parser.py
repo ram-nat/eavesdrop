@@ -123,6 +123,27 @@ def find_session(sessions_dir: Path, session_id: str) -> Path | None:
     return None
 
 
+def session_file_state(sessions_dir: Path, session_id: str) -> str:
+    """Return 'found', 'deleted', or 'missing' for a session ID.
+
+    'found'   — a non-deleted session file exists
+    'deleted' — only .deleted. variants exist (openclaw cleaned it up)
+    'missing' — no file for this session ID at all
+    """
+    found_deleted = False
+    try:
+        for p in sessions_dir.iterdir():
+            if not p.name.startswith(session_id) or ".jsonl" not in p.name:
+                continue
+            if ".deleted." in p.name:
+                found_deleted = True
+            else:
+                return "found"
+    except (FileNotFoundError, PermissionError, OSError):
+        pass
+    return "deleted" if found_deleted else "missing"
+
+
 def load_debug_log(
     log_path: Path,
     job_id: str,
