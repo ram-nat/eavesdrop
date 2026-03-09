@@ -14,9 +14,22 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.message import Message as TextualMessage
 from textual.widget import Widget
-from textual.widgets import Static, Label
+from textual.widgets import Static, Label, TextArea
 from textual.reactive import reactive
 from textual.containers import Vertical
+
+class SelectableText(TextArea):
+    """Read-only TextArea that pipes selected text through wl-copy on Wayland."""
+
+    def action_copy(self) -> None:
+        text = self.selected_text
+        if text and os.environ.get("WAYLAND_DISPLAY"):
+            try:
+                subprocess.run(["wl-copy"], input=text.encode(), check=True, timeout=2)
+            except Exception:
+                pass
+        super().action_copy()
+
 
 from eavesdrop.parser import Message, ModelChange, Usage, tool_result_has_error
 from eavesdrop.cron_parser import CronJob, CronRun, fmt_ms, fmt_duration
@@ -202,6 +215,8 @@ class ToolResultBlock(Widget):
         color: $text;
     }
     ToolResultBlock .result-body {
+        height: auto;
+        border: none;
         color: $text;
         padding: 0 0 0 2;
     }
@@ -233,7 +248,9 @@ class ToolResultBlock(Widget):
         yield Label(f"[TOOL RESULT: {msg.tool_name}]{error_suffix}", classes=label_class)
         full_text = self._get_text()
         yield Static(_truncate(full_text), classes="result-preview", id="preview", markup=False)
-        body = Static(full_text, classes="result-body", id="body", markup=False)
+        body = SelectableText(full_text, read_only=True, show_line_numbers=False,
+                        soft_wrap=True, tab_behavior="focus",
+                        classes="result-body", id="body")
         body.display = False
         yield body
 
@@ -268,6 +285,8 @@ class ThinkingBlock(Widget):
         text-style: bold;
     }
     ThinkingBlock .thinking-body {
+        height: auto;
+        border: none;
         color: $text-muted;
         padding: 0 0 0 2;
     }
@@ -280,7 +299,9 @@ class ThinkingBlock(Widget):
 
     def compose(self) -> ComposeResult:
         yield Label("[THINKING]", classes="thinking-label")
-        yield Static(self._text, classes="thinking-body", markup=False)
+        yield SelectableText(self._text, read_only=True, show_line_numbers=False,
+                       soft_wrap=True, tab_behavior="focus",
+                       classes="thinking-body")
 
     def watch_visible(self, value: bool) -> None:
         self.display = value
@@ -313,6 +334,8 @@ class FinalBlock(Widget):
         color: $text;
     }
     FinalBlock .final-body {
+        height: auto;
+        border: none;
         color: $text;
         padding: 0 0 0 2;
     }
@@ -325,7 +348,9 @@ class FinalBlock(Widget):
     def compose(self) -> ComposeResult:
         yield Label("[RESPONSE]", classes="final-label")
         yield Static(_truncate(self._text), classes="final-preview", id="preview", markup=False)
-        body = Static(self._text, classes="final-body", id="body", markup=False)
+        body = SelectableText(self._text, read_only=True, show_line_numbers=False,
+                        soft_wrap=True, tab_behavior="focus",
+                        classes="final-body", id="body")
         body.display = False
         yield body
 
@@ -380,6 +405,8 @@ class UserTurn(Widget):
         text-style: bold;
     }
     UserTurn .user-body {
+        height: auto;
+        border: none;
         color: $text;
         padding: 0 0 0 2;
     }
@@ -393,7 +420,9 @@ class UserTurn(Widget):
         yield Label("[USER]", classes="user-label")
         text_parts = [c.text for c in self._message.content if c.type == "text" and c.text]
         body = "\n".join(text_parts)
-        yield Static(body, classes="user-body")
+        yield SelectableText(body, read_only=True, show_line_numbers=False,
+                       soft_wrap=True, tab_behavior="focus",
+                       classes="user-body")
 
 
 class AssistantTurn(Widget):
@@ -408,6 +437,8 @@ class AssistantTurn(Widget):
         text-style: bold;
     }
     AssistantTurn .assistant-body {
+        height: auto;
+        border: none;
         color: $text;
         padding: 0 0 0 2;
     }
@@ -439,7 +470,9 @@ class AssistantTurn(Widget):
                     self._final_blocks.append(fb)
                     yield fb
                 else:
-                    yield Static(block.text, classes="assistant-body", markup=False)
+                    yield SelectableText(block.text, read_only=True, show_line_numbers=False,
+                                   soft_wrap=True, tab_behavior="focus",
+                                   classes="assistant-body")
 
         if self._message.usage:
             footer = UsageFooter(self._message.usage)
@@ -601,6 +634,7 @@ class DebugLogSection(Widget):
     BINDINGS = [
         Binding("enter", "toggle", "Toggle", show=False),
         Binding("space", "toggle", "Toggle", show=False),
+        Binding("y", "copy", "Copy log", show=True),
     ]
 
     DEFAULT_CSS = """
@@ -616,6 +650,8 @@ class DebugLogSection(Widget):
         text-style: bold;
     }
     DebugLogSection .debug-body {
+        height: auto;
+        border: none;
         color: $text-disabled;
         padding: 0 0 0 2;
     }
@@ -696,19 +732,16 @@ class DebugLogSection(Widget):
             classes="debug-label",
             id="debug-preview",
         )
-        body = Static(
-            self._format_entries(),
-            classes="debug-body",
-            id="debug-body",
-            markup=False,
-        )
+        body = SelectableText(self._format_entries(), read_only=True, show_line_numbers=False,
+                        soft_wrap=True, tab_behavior="focus",
+                        classes="debug-body", id="debug-body")
         body.display = False
         yield body
 
     def watch_expanded(self, value: bool) -> None:
         try:
             preview = self.query_one("#debug-preview", Label)
-            body = self.query_one("#debug-body", Static)
+            body = self.query_one("#debug-body", SelectableText)
             count = len(self._entries)
             if value:
                 preview.update(f"▼ Debug log ({count} entries)")
@@ -723,3 +756,13 @@ class DebugLogSection(Widget):
 
     def toggle(self) -> None:
         self.expanded = not self.expanded
+
+    def action_copy(self) -> None:
+        text = self._format_entries()
+        if os.environ.get("WAYLAND_DISPLAY"):
+            try:
+                subprocess.run(["wl-copy"], input=text.encode(), check=True, timeout=2)
+            except Exception:
+                pass
+        self.app.copy_to_clipboard(text)
+        self.app.notify("Copied", timeout=1.5)

@@ -1,4 +1,4 @@
-"""Tests for 'y' yank-to-clipboard on ToolCallBlock."""
+"""Tests for 'y' yank-to-clipboard on ToolCallBlock and DebugLogSection."""
 
 import json
 from pathlib import Path
@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 import pytest
 
 from eavesdrop.app import EavesdropApp
-from eavesdrop.widgets.turn import ToolCallBlock
+from eavesdrop.widgets.turn import ToolCallBlock, DebugLogSection
 
 
 # ---------------------------------------------------------------------------
@@ -174,3 +174,86 @@ class TestToolCallBlockCopyIntegration:
             initial_clipboard = app.clipboard
             await pilot.press("y")
             assert app.clipboard == initial_clipboard
+
+
+# ---------------------------------------------------------------------------
+# Unit: DebugLogSection 'y' binding and action_copy
+# ---------------------------------------------------------------------------
+
+class TestDebugLogSectionCopy:
+    def _mock_app(self):
+        mock_app = MagicMock()
+        mock_app.copy_to_clipboard = MagicMock()
+        mock_app.notify = MagicMock()
+        return mock_app
+
+    def _make_entries(self):
+        return [
+            {"_meta": {"date": "2026-03-08T10:00:00.000Z", "logLevelName": "INFO", "name": '{"module":"cron"}'},
+             "1": "job started"},
+            {"_meta": {"date": "2026-03-08T10:00:01.000Z", "logLevelName": "DEBUG", "name": '{"module":"cron"}'},
+             "1": "job done"},
+        ]
+
+    def test_y_binding_present(self):
+        keys = {b.key for b in DebugLogSection.BINDINGS}
+        assert "y" in keys
+
+    def test_copy_action_calls_osc52(self):
+        entries = self._make_entries()
+        section = DebugLogSection(entries)
+        mock_app = self._mock_app()
+        with patch.object(type(section), "app", new_callable=PropertyMock, return_value=mock_app):
+            section.action_copy()
+        mock_app.copy_to_clipboard.assert_called_once()
+        text = mock_app.copy_to_clipboard.call_args[0][0]
+        assert "job started" in text
+        assert "job done" in text
+
+    def test_copy_action_notifies(self):
+        entries = self._make_entries()
+        section = DebugLogSection(entries)
+        mock_app = self._mock_app()
+        with patch.object(type(section), "app", new_callable=PropertyMock, return_value=mock_app):
+            section.action_copy()
+        mock_app.notify.assert_called_once()
+
+    def test_copy_action_empty_entries(self):
+        section = DebugLogSection([])
+        mock_app = self._mock_app()
+        with patch.object(type(section), "app", new_callable=PropertyMock, return_value=mock_app):
+            section.action_copy()
+        text = mock_app.copy_to_clipboard.call_args[0][0]
+        assert text == "(no debug entries)"
+
+    def test_wayland_uses_wl_copy(self, monkeypatch):
+        entries = self._make_entries()
+        section = DebugLogSection(entries)
+        mock_app = self._mock_app()
+        monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+        with patch("subprocess.run") as mock_run, \
+             patch.object(type(section), "app", new_callable=PropertyMock, return_value=mock_app):
+            section.action_copy()
+        mock_run.assert_called_once()
+        assert mock_run.call_args[0][0] == ["wl-copy"]
+        mock_app.copy_to_clipboard.assert_called_once()
+
+    def test_wayland_wl_copy_failure_still_calls_osc52(self, monkeypatch):
+        entries = self._make_entries()
+        section = DebugLogSection(entries)
+        mock_app = self._mock_app()
+        monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+        with patch("subprocess.run", side_effect=FileNotFoundError), \
+             patch.object(type(section), "app", new_callable=PropertyMock, return_value=mock_app):
+            section.action_copy()
+        mock_app.copy_to_clipboard.assert_called_once()
+
+    def test_no_wayland_skips_wl_copy(self, monkeypatch):
+        entries = self._make_entries()
+        section = DebugLogSection(entries)
+        mock_app = self._mock_app()
+        monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+        with patch("subprocess.run") as mock_run, \
+             patch.object(type(section), "app", new_callable=PropertyMock, return_value=mock_app):
+            section.action_copy()
+        mock_run.assert_not_called()
